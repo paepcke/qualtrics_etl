@@ -57,8 +57,8 @@ class MySQLDB(object):
             print 'c1onnected boo'            
             self.connection = MySQLdb.connect(host=host, port=port, user=user, passwd=passwd, db=db, local_infile=1)
         
-        #except MySQLdb.OperationalError:
-        except pymysql.OperationalError:
+        except MySQLdb.OperationalError:
+        #except pymysql.OperationalError:
             pwd = '...............' if len(passwd) > 0 else '<no password>'
             raise ValueError('Cannot reach MySQL server with host:%s, port:%s, user:%s, pwd:%s, db:%s' %
                              (host, port, user, pwd, db))

@@ -34,7 +34,37 @@ def getUserPwd():
 _User,_Token = getUserPwd()
 print _User, _Token
 
-db=MySQLDB('127.0.0.1',3306,'root','','EdxQualtrics')
+
+"""
+Returns User, Token pair by parsing the file qualtrics_user and qualtrics_token
+in the ~/.ssh directory.
+"""
+def getMysqlUserPwd():
+  home = expanduser("~")
+  userFile = home + '/.ssh/mysql_qualtrics_user'  
+  tokenFile = home + '/.ssh/mysql_qualtrics_pwd'
+  if os.path.isfile(userFile) == False:
+    sys.exit("User file not found " + userFile) 
+  if os.path.isfile(tokenFile) == False:
+    sys.exit("Token file not found " + tokenFile) 
+
+  uid = None
+  token = None  
+
+  with open(userFile, 'r') as f:
+    uid = f.readline()
+
+  with open(tokenFile, 'r') as f:
+    token = f.readline()
+  
+  return uid.strip(), token.strip()
+
+_User,_Token = getUserPwd()
+print _User, _Token
+
+user,pwd = getMysqlUserPwd()
+#db=MySQLDB('127.0.0.1',3306,'root','','EdxQualtrics')
+db=MySQLDB('127.0.0.1',3306,user,pwd,'EdxQualtrics')
 
 
 """
