@@ -32,7 +32,9 @@ def getUserPwd():
   return uid.strip(), token.strip()
 
 _User,_Token = getUserPwd()
-print _User, _Token
+#********
+# print _User, _Token
+#********
 
 
 """
@@ -60,7 +62,9 @@ def getMysqlUserPwd():
   return uid.strip(), token.strip()
 
 _User,_Token = getUserPwd()
-print _User, _Token
+#********
+# print _User, _Token
+#********
 
 user,pwd = getMysqlUserPwd()
 #db=MySQLDB('127.0.0.1',3306,'root','','EdxQualtrics')
@@ -73,7 +77,9 @@ Returns all surveys for a particular user, token pair
 """
 def getSurveysForUser (User, Token):
   url='https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurveys&User=%s&Token=%s&Format=JSON&JSONPrettyPrint=1'%(User,Token)
-  print url
+  #********
+  # print url
+  #********
   d=None
   try:
     d=urllib2.urlopen(url).read()
@@ -88,7 +94,9 @@ def getSurveysForUser (User, Token):
     # everything is fine
 
   dict=json.loads(d)
-  print dict
+  #********
+  # print dict
+  #********
   return dict
 
 """
@@ -98,7 +106,9 @@ getSurvey() API and returns the raw XML. The format of the XML is specific to qu
 def getSurvey (User, Token, SurveyID):
   'SV_6YegHjmjmngyhVz'
   url="https://stanforduniversity.qualtrics.com//WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurvey&User=%s&Token=%s&SurveyID=%s"%(User,Token, SurveyID)
-  print url
+  #********
+  # print url
+  #********
   d=None
   try:
     d=urllib2.urlopen(url).read()
@@ -112,7 +122,9 @@ def getSurvey (User, Token, SurveyID):
     return None
 
 
-  print d
+  #********
+  # print d
+  #********
   return d
 
 """
@@ -121,7 +133,9 @@ Both elaborate_response and condensed_response response-types are supported.
 """
 def getResponses (User, Token, SurveyID):
   url="""https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getLegacyResponseData&User=%s&Token=%s&Format=JSON&SurveyID=%s&Labels=1"""%(User, Token, SurveyID)
-  print url
+  #********
+  # print url
+  #********
   try:
     elaborate_response=json.loads(urllib2.urlopen(url).read())
   except URLError as e:
@@ -134,13 +148,16 @@ def getResponses (User, Token, SurveyID):
     return None, None
 
 
-  print 'ELABORATE RESPONSE'
-  print elaborate_response
+  #********
+  # print 'ELABORATE RESPONSE'
+  # print elaborate_response
 
-  print 'CONDENSED RESPONSE'
-
+  # print 'CONDENSED RESPONSE'
+  #********
   url="""https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getLegacyResponseData&User=%s&Token=%s&Format=JSON&SurveyID=%s"""%(User, Token, SurveyID)  
-  print url
+  #********
+  # print url
+  #********
 
   try:
     condensed_response=json.loads(urllib2.urlopen(url).read())
@@ -154,7 +171,9 @@ def getResponses (User, Token, SurveyID):
     return None, None
 
 
-  print condensed_response
+  #********
+  # print condensed_response
+  #********
 
   return (elaborate_response,condensed_response)
 
@@ -167,7 +186,7 @@ def Transform(x):
     return '"NULL"'
   return x
 
-def Q(x):
+def MkSafeStr(x):
     if x is None:
         return x
 
@@ -181,8 +200,70 @@ def Q(x):
     s = '"%s"'%(s)
     return s
 
+"""
+ Ensures that the EdxQualtrics database, and all required tables are present: 
+"""
 
+def initDatabaseIfNeeded():
 
+    db.execute("CREATE DATABASE IF NOT EXISTS EdxQualtrics;")
+    db.execute("DROP TABLE IF EXISTS `choice`;")
+    db.execute("DROP TABLE IF EXISTS `question`;")
+    db.execute("DROP TABLE IF EXISTS `response`;")
+    db.execute("DROP TABLE IF EXISTS `response_metadata`;")
+    db.execute("DROP TABLE IF EXISTS `survey_meta`;")
+    
+    choiceTbl   =      "CREATE TABLE IF NOT EXISTS `choice` (" +\
+                        "`SurveyId` varchar(50) DEFAULT NULL," +\
+                        "`QuestionId` varchar(50) DEFAULT NULL," +\
+                        "`ChoiceId` varchar(50) DEFAULT NULL," +\
+                        "`description` varchar(3000) DEFAULT NULL" +\
+                        ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
+                 
+    questionTbl =     "CREATE TABLE IF NOT EXISTS `question` (" +\
+ 					    "`SurveyId` varchar(50) DEFAULT NULL," +\
+ 					    "`questionid` varchar(5000) DEFAULT NULL," +\
+ 					    "`questiontext` varchar(5000) DEFAULT NULL," +\
+ 					    "`questiondescription` varchar(5000) DEFAULT NULL," +\
+ 					    "`ForceResponse` varchar(50) DEFAULT NULL," +\
+ 					    "`QuestionType` varchar(50) DEFAULT NULL" +\
+ 					  ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
+ 
+    responseTbl =     "CREATE TABLE IF NOT EXISTS `response` (" +\
+    					"  `SurveyId` varchar(50) DEFAULT NULL," +\
+    					"  `ResponseId` varchar(50) DEFAULT NULL," +\
+    					"  `QuestionId` varchar(50) DEFAULT NULL," +\
+    					"  `AnswerChoiceId` varchar(500) DEFAULT NULL," +\
+    					"  `Description` varchar(2000) DEFAULT NULL" +\
+    					") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
+                         
+    responseMetaTbl = "CREATE TABLE IF NOT EXISTS `response_metadata` (" +\
+ 					  "  `SurveyId` varchar(50) DEFAULT NULL," +\
+ 					  "  `name` varchar(1200) DEFAULT NULL," +\
+ 					  "  `EmailAddress` varchar(50) DEFAULT NULL," +\
+ 					  "  `IpAddress` varchar(50) DEFAULT NULL," +\
+ 					  "  `StartDate` datetime DEFAULT NULL," +\
+ 					  "  `EndDate` datetime DEFAULT NULL," +\
+ 					  "  `anon_id` varchar(40) DEFAULT NULL," +\
+ 					  "  `ext_id` varchar(40) DEFAULT NULL" +\
+ 					  ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
+ 					                          
+    surveyMeta   =   "CREATE TABLE IF NOT EXISTS `survey_meta` (" +\
+ 					 "  `SurveyId` varchar(50) DEFAULT NULL," +\
+ 					 "  `SurveyCreationDate` datetime DEFAULT NULL," +\
+ 					 "  `userfirstname` varchar(200) DEFAULT NULL," +\
+ 					 "  `userlastname` varchar(200) DEFAULT NULL," +\
+ 					 "  `surveyname` varchar(2000) DEFAULT NULL," +\
+ 					 "  `SurveyOwnerId` varchar(50) DEFAULT NULL," +\
+ 					 "  `SurveyExpirationDate` datetime DEFAULT NULL" +\
+ 					 ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
+
+    db.execute(choiceTbl)
+    db.execute(questionTbl)
+    db.execute(responseTbl)
+    db.execute(responseMetaTbl)
+    db.execute(surveyMeta)
+                                              						
 """
 Parses the responses and extracts fields like ip, name, anon etc from the response.
 Also parses responses and inserts each response to a question in the DB
@@ -206,42 +287,53 @@ def parseResponses (SurveyID):
     if 'a' in response:
       ext_id = response['a']
     start=response['StartDate']
-    print ext_id
+    #********
+    # print ext_id
+    #********
     query = "insert into response_metadata(SurveyId, Name, EmailAddress, IpAddress, StartDate, EndDate,  ext_id, anon_id) values\
-    ('%s','%s','%s','%s','%s','%s','%s',idExt2Anon('%s'))"%(Q(SurveyID),Q(name),Q(email),Q(ip),start,end, ext_id, ext_id)
-    print query
+    ('%s','%s','%s','%s','%s','%s','%s',idExt2Anon('%s'))"%(MkSafeStr(SurveyID),MkSafeStr(name),MkSafeStr(email),MkSafeStr(ip),start,end, ext_id, ext_id)
+    #********
+    # print query
+    #********
     db.execute(query)
     if (not(isinstance(response,dict))):
       continue
 
     keys = response.keys()
     for key in keys:
-      print key
-      print response
+      #********
+      # print key
+      # print response
+      #********
 
-      if key and key[0]=='Q' and '_' in key[0]:
+      if key and key[0]=='MkSafeStr' and '_' in key[0]:
         splits = key[0].split('_')
         #qid = key[0]
         qid = splits[0]
         cid = splits[1]
         ans = response[key]
         query = "insert into response(SurveyId, ResponseId, QuestionId, AnswerChoiceId,Description) values \
-         ('%s','%s','%s','%s')" % (Q(SurveyID), Q(responseId), Q(qid), Q(cid),Q(ans))
-        print query
+         ('%s','%s','%s','%s')" % (MkSafeStr(SurveyID), MkSafeStr(responseId), MkSafeStr(qid), MkSafeStr(cid),MkSafeStr(ans))
+        #********
+        # print query
+        #********
         db.execute (query)
 
 
 
-      if key and key[0]=='Q':
+      if key and key[0]=='MkSafeStr':
         qid = key
         ans = response[key]
         query = "insert into response(SurveyId, ResponseId, QuestionId, Description) values \
-         ('%s','%s','%s','%s')" % (Q(SurveyID), Q(responseId), Q(qid), Q(ans))
-        print query
+         ('%s','%s','%s','%s')" % (MkSafeStr(SurveyID), MkSafeStr(responseId), MkSafeStr(qid), MkSafeStr(ans))
+        #********
+        # print query
+        #********
         db.execute (query)
 
 
 
+initDatabaseIfNeeded()
 
 """
 Driver for executing the program, that parses the survey questions and loads the Survey
@@ -253,14 +345,19 @@ d=getSurveysForUser (_User, _Token)
 if d == None:
   print 'no surveys found for user %s' %(_User)
 
-print d
+#********
+# print d
+#********
 res = d['Result']
 if 'Surveys' not in res:
 	raise  Exception('ERROR. Surveys is not in results')
 surveys = res['Surveys']
 for survey in surveys:
+  #********
+  print("Processing survey '%s'" % survey['SurveyName'])
+  #********
   q="insert into survey_meta(SurveyId, SurveyCreationDate, UserFirstName, UserLastName, SurveyName, SurveyOwnerId, SurveyExpirationDate) values\
-  ('%s','%s','%s','%s','%s','%s','%s') "%(Q(survey['SurveyID']),survey['SurveyCreationDate'],Q(survey['UserFirstName']),Q(survey['UserLastName']),Q(survey['SurveyName']),Q(survey['SurveyOwnerID']),survey['SurveyExpirationDate'])
+  ('%s','%s','%s','%s','%s','%s','%s') "%(MkSafeStr(survey['SurveyID']),survey['SurveyCreationDate'],MkSafeStr(survey['UserFirstName']),MkSafeStr(survey['UserLastName']),MkSafeStr(survey['SurveyName']),MkSafeStr(survey['SurveyOwnerID']),survey['SurveyExpirationDate'])
   db.execute(q)
   x=getSurvey(_User,_Token,survey['SurveyID'])
   
@@ -282,16 +379,20 @@ for survey in surveys:
       force = 'False'  
 
     query= "insert into question(SurveyId, QuestionId, QuestionText, QuestionDescription, ForceResponse, Questiontype) values ('%s','%s','%s','%s','%s','%s')\
-    "%(sid, qid, Q(text), Q(desc), force, type_)
-    print query
+    "%(sid, qid, MkSafeStr(text), MkSafeStr(desc), force, type_)
+    #********
+    # print query
+    #********
     db.execute(query)
     choices = q.findall('Choices/Choice')
     for choice in choices:
        cid = choice.attrib['ID']
        cdesc = choice.find('Description').text
        cdesc=cdesc.replace("'","''")
-       query= "insert into choice(SurveyId, QuestionId, ChoiceId, Description) values ('%s','%s','%s','%s')"%(sid, qid, cid, Q(cdesc))
-       print query
+       query= "insert into choice(SurveyId, QuestionId, ChoiceId, Description) values ('%s','%s','%s','%s')"%(sid, qid, cid, MkSafeStr(cdesc))
+       #********
+       # print query
+       #********
        db.execute(query)
 
   parseResponses(sid)
