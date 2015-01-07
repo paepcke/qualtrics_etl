@@ -340,11 +340,15 @@ Driver for executing the program, that parses the survey questions and loads the
 responses
 """
 
-d=getSurveysForUser (_User, _Token)  
+try:
+    d=getSurveysForUser (_User, _Token)  
+except ValueError as e:
+    print("Bad json in user surveys dict (user '%s'; token '%s'): %s" % (_User, _Token, `e`))
 
 if d == None:
   print 'no surveys found for user %s' %(_User)
-
+  sys.exit()
+  
 #********
 # print d
 #********
@@ -395,6 +399,11 @@ for survey in surveys:
        #********
        db.execute(query)
 
-  parseResponses(sid)
+  try:
+      parseResponses(sid)
+  except ValueError as e:
+      print("Bad json in survey '%s': %s" % (survey['SurveyName'], `e`))
+      continue
+      
 
 
