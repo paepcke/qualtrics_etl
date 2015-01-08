@@ -14,7 +14,7 @@ import sys
 
 def initDatabaseIfNeeded():
 
-    db.execute("CREATE DATABASE IF NOT EXISTS EdxQualtrics;")
+    #db.execute("CREATE DATABASE IF NOT EXISTS EdxQualtrics;")
     db.execute("DROP TABLE IF EXISTS `choice`;")
     db.execute("DROP TABLE IF EXISTS `question`;")
     db.execute("DROP TABLE IF EXISTS `response`;")
@@ -133,14 +133,10 @@ _User,_Token = getUserPwd()
 
 user,pwd = getMysqlUserPwd()
 #db=MySQLDB('127.0.0.1',3306,'root','','EdxQualtrics')
-# First, connect to the always available mysql db:
-db=MySQLDB('127.0.0.1',3306,user,pwd)
-# Make sure a database 'EdxQualtrics' exists, as
-# well as required tables:
-initDatabaseIfNeeded()
-db.close()
-# Now connect to the qualtrics db;
+# Now connect to the qualtrics db; NOTE the
+# db EdxQualtrics must be present:
 db=MySQLDB('127.0.0.1',3306,user,pwd,'EdxQualtrics')
+initDatabaseIfNeeded()
 
 
 """
