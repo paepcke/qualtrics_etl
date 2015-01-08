@@ -133,8 +133,8 @@ _User,_Token = getUserPwd()
 
 user,pwd = getMysqlUserPwd()
 #db=MySQLDB('127.0.0.1',3306,'root','','EdxQualtrics')
-# First, connect to the always available test db:
-db=MySQLDB('127.0.0.1',3306,user,pwd,'test')
+# First, connect to the always available mysql db:
+db=MySQLDB('127.0.0.1',3306,user,pwd)
 # Make sure a database 'EdxQualtrics' exists, as
 # well as required tables:
 initDatabaseIfNeeded()
