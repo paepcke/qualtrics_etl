@@ -141,11 +141,14 @@ def getResponses (User, Token, SurveyID):
   except URLError as e:
     if hasattr(e, 'reason'):
         print 'We failed to reach a server.'
-        print 'Reason: ', e.reason
+        print '    Reason: ', e.reason
     elif hasattr(e, 'code'):
         print 'The server couldn\'t fulfill the request.'
-        print 'Error code: ', e.code
-    return None, None
+        print '    Error code: ', e.code
+        return None, None
+  except ValueError as e:
+       print "Bad json in getResponses() elaborate response: '%s'" % str(urllib2.urlopen(url).read())
+       return None, None
 
 
   #********
@@ -169,6 +172,9 @@ def getResponses (User, Token, SurveyID):
         print 'The server couldn\'t fulfill the request.'
         print 'Error code: ', e.code
     return None, None
+  except ValueError as e:
+       print "Bad json in getResponses() condensed response: '%s'" % str(urllib2.urlopen(url).read())
+       return None, None
 
 
   #********
@@ -392,7 +398,10 @@ for survey in surveys:
     for choice in choices:
        cid = choice.attrib['ID']
        cdesc = choice.find('Description').text
-       cdesc=cdesc.replace("'","''")
+       if cdesc is None:
+           cdesc = 'n/a'
+       else:
+           cdesc=cdesc.replace("'","''")
        query= "insert into choice(SurveyId, QuestionId, ChoiceId, Description) values ('%s','%s','%s','%s')"%(sid, qid, cid, MkSafeStr(cdesc))
        #********
        # print query
@@ -402,7 +411,7 @@ for survey in surveys:
   try:
       parseResponses(sid)
   except ValueError as e:
-      print("Bad json in survey '%s': %s" % (survey['SurveyName'], `e`))
+      print("Bad json in survey '%s' (%s): '%s'" % (survey['SurveyName'], `e`, str(sid)))
       continue
       
 
