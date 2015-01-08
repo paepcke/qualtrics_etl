@@ -316,30 +316,28 @@ def parseResponses (SurveyID):
       # print response
       #********
 
-      if key and key[0]=='MkSafeStr' and '_' in key[0]:
-        splits = key[0].split('_')
+      if key and key[0]=='Q' and '_' in key:
+        splits = key.split('_')
         #qid = key[0]
         qid = splits[0]
         cid = splits[1]
         ans = response[key]
         query = "insert into response(SurveyId, ResponseId, QuestionId, AnswerChoiceId,Description) values \
-         ('%s','%s','%s','%s')" % (MkSafeStr(SurveyID), MkSafeStr(responseId), MkSafeStr(qid), MkSafeStr(cid),MkSafeStr(ans))
+         ('%s','%s','%s','%s', '%s')" % (MkSafeStr(SurveyID), MkSafeStr(responseId), MkSafeStr(qid), MkSafeStr(cid),MkSafeStr(ans))
         #********
         # print query
         #********
         db.execute (query.encode('UTF-8','ignore'))
-
-
-
-      if key and key[0]=='MkSafeStr':
-        qid = key
-        ans = response[key]
-        query = "insert into response(SurveyId, ResponseId, QuestionId, Description) values \
-         ('%s','%s','%s','%s')" % (MkSafeStr(SurveyID), MkSafeStr(responseId), MkSafeStr(qid), MkSafeStr(ans))
-        #********
-        # print query
-        #********
-        db.execute (query.encode('UTF-8','ignore'))
+      else:
+          if key and key[0]=='Q':
+            qid = key
+            ans = response[key]
+            query = "insert into response(SurveyId, ResponseId, QuestionId, Description) values \
+             ('%s','%s','%s','%s')" % (MkSafeStr(SurveyID), MkSafeStr(responseId), MkSafeStr(qid), MkSafeStr(ans))
+            #********
+            # print query
+            #********
+            db.execute (query.encode('UTF-8','ignore'))
 
 """
 Driver for executing the program, that parses the survey questions and loads the Survey
@@ -364,7 +362,7 @@ if 'Surveys' not in res:
 surveys = res['Surveys']
 for survey in surveys:
   #********
-  print("Processing survey '%s'" % survey['SurveyName'])
+  print("Processing survey '%s' (SurveyId: '%s')" % (survey['SurveyName'], survey.get('SurveyID','n/a')))
   #********
   q="insert into survey_meta(SurveyId, SurveyCreationDate, UserFirstName, UserLastName, SurveyName, SurveyOwnerId, SurveyExpirationDate) values\
   ('%s','%s','%s','%s','%s','%s','%s') "% \
