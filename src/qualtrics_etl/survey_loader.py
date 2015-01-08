@@ -1,12 +1,77 @@
 import json
 import urllib2
 from pymysql_utils1 import MySQLDB
+#from pymysql_utils import MySQLDB
 import xml.etree.ElementTree as ET
 from urllib2 import Request, URLError
 from os.path import expanduser
 import os.path
 import sys
 
+"""
+ Ensures that the EdxQualtrics database, and all required tables are present: 
+"""
+
+def initDatabaseIfNeeded():
+
+    db.execute("CREATE DATABASE IF NOT EXISTS EdxQualtrics;")
+    db.execute("DROP TABLE IF EXISTS `choice`;")
+    db.execute("DROP TABLE IF EXISTS `question`;")
+    db.execute("DROP TABLE IF EXISTS `response`;")
+    db.execute("DROP TABLE IF EXISTS `response_metadata`;")
+    db.execute("DROP TABLE IF EXISTS `survey_meta`;")
+    
+    choiceTbl   =      "CREATE TABLE IF NOT EXISTS `choice` (" +\
+                        "`SurveyId` varchar(50) DEFAULT NULL," +\
+                        "`QuestionId` varchar(50) DEFAULT NULL," +\
+                        "`ChoiceId` varchar(50) DEFAULT NULL," +\
+                        "`description` varchar(3000) DEFAULT NULL" +\
+                        ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
+                 
+    questionTbl =     "CREATE TABLE IF NOT EXISTS `question` (" +\
+ 					    "`SurveyId` varchar(50) DEFAULT NULL," +\
+ 					    "`questionid` varchar(5000) DEFAULT NULL," +\
+ 					    "`questiontext` varchar(5000) DEFAULT NULL," +\
+ 					    "`questiondescription` varchar(5000) DEFAULT NULL," +\
+ 					    "`ForceResponse` varchar(50) DEFAULT NULL," +\
+ 					    "`QuestionType` varchar(50) DEFAULT NULL" +\
+ 					  ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
+ 
+    responseTbl =     "CREATE TABLE IF NOT EXISTS `response` (" +\
+    					"  `SurveyId` varchar(50) DEFAULT NULL," +\
+    					"  `ResponseId` varchar(50) DEFAULT NULL," +\
+    					"  `QuestionId` varchar(50) DEFAULT NULL," +\
+    					"  `AnswerChoiceId` varchar(500) DEFAULT NULL," +\
+    					"  `Description` varchar(2000) DEFAULT NULL" +\
+    					") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
+                         
+    responseMetaTbl = "CREATE TABLE IF NOT EXISTS `response_metadata` (" +\
+ 					  "  `SurveyId` varchar(50) DEFAULT NULL," +\
+ 					  "  `name` varchar(1200) DEFAULT NULL," +\
+ 					  "  `EmailAddress` varchar(50) DEFAULT NULL," +\
+ 					  "  `IpAddress` varchar(50) DEFAULT NULL," +\
+ 					  "  `StartDate` datetime DEFAULT NULL," +\
+ 					  "  `EndDate` datetime DEFAULT NULL," +\
+ 					  "  `anon_id` varchar(40) DEFAULT NULL," +\
+ 					  "  `ext_id` varchar(40) DEFAULT NULL" +\
+ 					  ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
+ 					                          
+    surveyMeta   =   "CREATE TABLE IF NOT EXISTS `survey_meta` (" +\
+ 					 "  `SurveyId` varchar(50) DEFAULT NULL," +\
+ 					 "  `SurveyCreationDate` datetime DEFAULT NULL," +\
+ 					 "  `userfirstname` varchar(200) DEFAULT NULL," +\
+ 					 "  `userlastname` varchar(200) DEFAULT NULL," +\
+ 					 "  `surveyname` varchar(2000) DEFAULT NULL," +\
+ 					 "  `SurveyOwnerId` varchar(50) DEFAULT NULL," +\
+ 					 "  `SurveyExpirationDate` datetime DEFAULT NULL" +\
+ 					 ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
+
+    db.execute(choiceTbl)
+    db.execute(questionTbl)
+    db.execute(responseTbl)
+    db.execute(responseMetaTbl)
+    db.execute(surveyMeta)
+                                              						
 """
 Returns User, Token pair by parsing the file qualtrics_user and qualtrics_token
 in the ~/.ssh directory.
@@ -68,6 +133,13 @@ _User,_Token = getUserPwd()
 
 user,pwd = getMysqlUserPwd()
 #db=MySQLDB('127.0.0.1',3306,'root','','EdxQualtrics')
+# First, connect to the always available test db:
+db=MySQLDB('127.0.0.1',3306,user,pwd,'test')
+# Make sure a database 'EdxQualtrics' exists, as
+# well as required tables:
+initDatabaseIfNeeded()
+db.close()
+# Now connect to the qualtrics db;
 db=MySQLDB('127.0.0.1',3306,user,pwd,'EdxQualtrics')
 
 
@@ -207,70 +279,6 @@ def MkSafeStr(x):
     return s
 
 """
- Ensures that the EdxQualtrics database, and all required tables are present: 
-"""
-
-def initDatabaseIfNeeded():
-
-    db.execute("CREATE DATABASE IF NOT EXISTS EdxQualtrics;")
-    db.execute("DROP TABLE IF EXISTS `choice`;")
-    db.execute("DROP TABLE IF EXISTS `question`;")
-    db.execute("DROP TABLE IF EXISTS `response`;")
-    db.execute("DROP TABLE IF EXISTS `response_metadata`;")
-    db.execute("DROP TABLE IF EXISTS `survey_meta`;")
-    
-    choiceTbl   =      "CREATE TABLE IF NOT EXISTS `choice` (" +\
-                        "`SurveyId` varchar(50) DEFAULT NULL," +\
-                        "`QuestionId` varchar(50) DEFAULT NULL," +\
-                        "`ChoiceId` varchar(50) DEFAULT NULL," +\
-                        "`description` varchar(3000) DEFAULT NULL" +\
-                        ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
-                 
-    questionTbl =     "CREATE TABLE IF NOT EXISTS `question` (" +\
- 					    "`SurveyId` varchar(50) DEFAULT NULL," +\
- 					    "`questionid` varchar(5000) DEFAULT NULL," +\
- 					    "`questiontext` varchar(5000) DEFAULT NULL," +\
- 					    "`questiondescription` varchar(5000) DEFAULT NULL," +\
- 					    "`ForceResponse` varchar(50) DEFAULT NULL," +\
- 					    "`QuestionType` varchar(50) DEFAULT NULL" +\
- 					  ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
- 
-    responseTbl =     "CREATE TABLE IF NOT EXISTS `response` (" +\
-    					"  `SurveyId` varchar(50) DEFAULT NULL," +\
-    					"  `ResponseId` varchar(50) DEFAULT NULL," +\
-    					"  `QuestionId` varchar(50) DEFAULT NULL," +\
-    					"  `AnswerChoiceId` varchar(500) DEFAULT NULL," +\
-    					"  `Description` varchar(2000) DEFAULT NULL" +\
-    					") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
-                         
-    responseMetaTbl = "CREATE TABLE IF NOT EXISTS `response_metadata` (" +\
- 					  "  `SurveyId` varchar(50) DEFAULT NULL," +\
- 					  "  `name` varchar(1200) DEFAULT NULL," +\
- 					  "  `EmailAddress` varchar(50) DEFAULT NULL," +\
- 					  "  `IpAddress` varchar(50) DEFAULT NULL," +\
- 					  "  `StartDate` datetime DEFAULT NULL," +\
- 					  "  `EndDate` datetime DEFAULT NULL," +\
- 					  "  `anon_id` varchar(40) DEFAULT NULL," +\
- 					  "  `ext_id` varchar(40) DEFAULT NULL" +\
- 					  ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
- 					                          
-    surveyMeta   =   "CREATE TABLE IF NOT EXISTS `survey_meta` (" +\
- 					 "  `SurveyId` varchar(50) DEFAULT NULL," +\
- 					 "  `SurveyCreationDate` datetime DEFAULT NULL," +\
- 					 "  `userfirstname` varchar(200) DEFAULT NULL," +\
- 					 "  `userlastname` varchar(200) DEFAULT NULL," +\
- 					 "  `surveyname` varchar(2000) DEFAULT NULL," +\
- 					 "  `SurveyOwnerId` varchar(50) DEFAULT NULL," +\
- 					 "  `SurveyExpirationDate` datetime DEFAULT NULL" +\
- 					 ") ENGINE=MyISAM DEFAULT CHARSET=utf8;"
-
-    db.execute(choiceTbl)
-    db.execute(questionTbl)
-    db.execute(responseTbl)
-    db.execute(responseMetaTbl)
-    db.execute(surveyMeta)
-                                              						
-"""
 Parses the responses and extracts fields like ip, name, anon etc from the response.
 Also parses responses and inserts each response to a question in the DB
 """
@@ -336,10 +344,6 @@ def parseResponses (SurveyID):
         # print query
         #********
         db.execute (query)
-
-
-
-initDatabaseIfNeeded()
 
 """
 Driver for executing the program, that parses the survey questions and loads the Survey
