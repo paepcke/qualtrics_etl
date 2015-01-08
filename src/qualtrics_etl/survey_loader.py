@@ -367,7 +367,14 @@ for survey in surveys:
   print("Processing survey '%s'" % survey['SurveyName'])
   #********
   q="insert into survey_meta(SurveyId, SurveyCreationDate, UserFirstName, UserLastName, SurveyName, SurveyOwnerId, SurveyExpirationDate) values\
-  ('%s','%s','%s','%s','%s','%s','%s') "%(MkSafeStr(survey['SurveyID']),survey['SurveyCreationDate'],MkSafeStr(survey['UserFirstName']),MkSafeStr(survey['UserLastName']),MkSafeStr(survey['SurveyName']),MkSafeStr(survey['SurveyOwnerID']),survey['SurveyExpirationDate'])
+  ('%s','%s','%s','%s','%s','%s','%s') "% \
+  (MkSafeStr(survey.get('SurveyID','n/a')),
+   survey.get('SurveyCreationDate','n/a'),
+   MkSafeStr(survey.get('UserFirstName','n/a')),
+   MkSafeStr(survey.get('UserLastName','n/a')),
+   MkSafeStr(survey.get('SurveyName','n/a')),
+   MkSafeStr(survey.get('SurveyOwnerID','n/a')),
+   survey.get('SurveyExpirationDate','n/a'))
   db.execute(q)
   x=getSurvey(_User,_Token,survey['SurveyID'])
   
