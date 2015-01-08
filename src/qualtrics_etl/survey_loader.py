@@ -305,7 +305,7 @@ def parseResponses (SurveyID):
     #********
     # print query
     #********
-    db.execute(query)
+    db.execute(query.encode('UTF-8','ignore'))
     if (not(isinstance(response,dict))):
       continue
 
@@ -327,7 +327,7 @@ def parseResponses (SurveyID):
         #********
         # print query
         #********
-        db.execute (query)
+        db.execute (query.encode('UTF-8','ignore'))
 
 
 
@@ -339,7 +339,7 @@ def parseResponses (SurveyID):
         #********
         # print query
         #********
-        db.execute (query)
+        db.execute (query.encode('UTF-8','ignore'))
 
 """
 Driver for executing the program, that parses the survey questions and loads the Survey
@@ -375,7 +375,7 @@ for survey in surveys:
    MkSafeStr(survey.get('SurveyName','n/a')),
    MkSafeStr(survey.get('SurveyOwnerID','n/a')),
    survey.get('SurveyExpirationDate','n/a'))
-  db.execute(q)
+  db.execute(q.encode('UTF-8','ignore'))
   x=getSurvey(_User,_Token,survey['SurveyID'])
   
   if x == None:
@@ -400,7 +400,7 @@ for survey in surveys:
     #********
     # print query
     #********
-    db.execute(query)
+    db.execute(query.encode('UTF-8','ignore'))
     choices = q.findall('Choices/Choice')
     for choice in choices:
        cid = choice.attrib['ID']
@@ -413,7 +413,7 @@ for survey in surveys:
        #********
        # print query
        #********
-       db.execute(query)
+       db.execute(query.encode('UTF-8','ignore'))
 
   try:
       parseResponses(sid)
