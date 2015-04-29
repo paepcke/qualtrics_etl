@@ -55,6 +55,5 @@ target/
 .project
 .pydevproject
 
-# Test/output files
-src/qualtrics_etl/*.json
-src/qualtrics_etl/*.xml
+# Output tests
+xml/
