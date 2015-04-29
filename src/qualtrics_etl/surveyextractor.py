@@ -28,20 +28,23 @@ class QualtricsExtractor(object):
         with open(tokenFile, 'r') as f:
             self.token = f.readline().rstrip()
 
+
+## API extractor class methods ##
+
     def __getSurveyMetadata(self):
         '''
         Pull survey metadata from Qualtrics.
         '''
         url = "https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurveys&User=%s&Token=%s&Format=JSON&JSONPrettyPrint=1" % (self.user, self.token)
-        data = urllib2.urlopen(url).read()
+        data = json.loads(urllib2.urlopen(url).read())
         return data
 
     def __genSurveyIDs(self, data):
         '''
         Generator for Qualtrics survey IDs.
         '''
-        d = json.loads(data)
-        surveys = d['Result']['Surveys']
+        # d = json.loads(data)
+        surveys = data['Result']['Surveys']
         total = len(surveys)
         index = 0
         while index <= total:
@@ -56,6 +59,17 @@ class QualtricsExtractor(object):
         url="https://stanforduniversity.qualtrics.com//WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurvey&User=%s&Token=%s&SurveyID=%s" % (self.user, self.token, surveyID)
         data = urllib2.urlopen(url).read()
         return data
+
+    def __getResponses(self, surveyID):
+        '''
+        Pull response data for given surveyID from Qualtrics.
+        '''
+        url = "https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getLegacyResponseData&User=%s&Token=%s&Format=JSON&SurveyID=%s&Labels=1" % (self.user, self.token, surveyID)
+        data = json.loads(urllib2.urlopen(url).read())
+        return data
+
+
+## Convenience functions to write data to outfiles
 
     def __writeXML(self, data, filename):
         '''
@@ -77,6 +91,26 @@ class QualtricsExtractor(object):
         srv.write(pxml)
         srv.close()
 
+    def __writeJSON(self, data, filename):
+        '''
+        Convenience function for writing out JSON data to file.
+        '''
+        jstr = json.dumps(obj=data, indent=4)
+        fn = "xml/" + filename + ".json"
+        doc = open(fn, 'w')
+        doc.write(jstr)
+        doc.close()
+
+
+## Client file IO methods
+
+    def writeMetadata(self):
+        '''
+        Client method outputs survey metadata to JSON file.
+        '''
+        svMeta = self.__getSurveyMetadata()
+        self.__writeJSON(svMeta, "SV_meta")
+
     def writeOneSurvey(self):
         '''
         Client method outputs one survey to XML file.
@@ -96,14 +130,17 @@ class QualtricsExtractor(object):
             sv = self.__getSurvey(svID)
             self.__writeXML(sv, svID)
 
-    def writeMetadata(self):
+    def writeOneSVResponses(self):
         '''
-        Client method outputs survey metadata to JSON file.
+        Client method outputs responses for one survey to JSON file.
         '''
         svMeta = self.__getSurveyMetadata()
-        doc = open("xml/SV_meta.json", 'w')
-        doc.write(svMeta)
-        doc.close()
+        svID = self.__genSurveyIDs(svMeta).next()
+        resp = self.__getResponses(svID)
+        fn = svID + "_responses"
+        self.__writeJSON(resp, fn)
+
+
 
 # Default behavior for class pulls a single survey from Qualtrics and outputs as
 # pretty-printed XML. TODO: Pull all surveys.
@@ -112,5 +149,8 @@ if __name__ == '__main__':
 
     # Get survey data from Qualtrics
     qe = QualtricsExtractor()
+
+    # Write samples to file for analysis
     qe.writeMetadata()
     qe.writeOneSurvey()
+    qe.writeOneSVResponses()
