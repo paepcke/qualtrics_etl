@@ -29,21 +29,21 @@ class QualtricsExtractor(object):
             self.token = f.readline().rstrip()
 
 
-## API extractor class methods ##
+## API extractor methods
 
     def __getSurveyMetadata(self):
         '''
-        Pull survey metadata from Qualtrics.
+        Pull survey metadata from Qualtrics. Returns JSON object.
         '''
         url = "https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurveys&User=%s&Token=%s&Format=JSON&JSONPrettyPrint=1" % (self.user, self.token)
         data = json.loads(urllib2.urlopen(url).read())
         return data
 
-    def __genSurveyIDs(self, data):
+    def __genSurveyIDs(self):
         '''
         Generator for Qualtrics survey IDs.
         '''
-        # d = json.loads(data)
+        data = self.__getSurveyMetadata
         surveys = data['Result']['Surveys']
         total = len(surveys)
         index = 0
@@ -54,103 +54,162 @@ class QualtricsExtractor(object):
 
     def __getSurvey(self, surveyID):
         '''
-        Pull survey data for given surveyID from Qualtrics.
+        Pull survey data for given surveyID from Qualtrics. Returns XML string.
         '''
         url="https://stanforduniversity.qualtrics.com//WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurvey&User=%s&Token=%s&SurveyID=%s" % (self.user, self.token, surveyID)
         data = urllib2.urlopen(url).read()
-        return data
+
+        # Write data to temp file
+        doc = open('temp.xml', 'w')
+        doc.write(data)
+        doc.close()
+
+        # Parse XML from temp file, clean up and returns
+        xml = ET.parse('temp.xml')
+        os.remove('temp.xml')
+        pxml = ET.tostring(xml, pretty_print=True)
+        return pxml
 
     def __getResponses(self, surveyID):
         '''
-        Pull response data for given surveyID from Qualtrics.
+        Pull response data for given surveyID from Qualtrics. Returns JSON object.
         '''
         url = "https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getLegacyResponseData&User=%s&Token=%s&Format=JSON&SurveyID=%s&Labels=1" % (self.user, self.token, surveyID)
         data = json.loads(urllib2.urlopen(url).read())
         return data
 
 
-## Convenience functions to write data to outfiles
+## Helper methods for survey parsing
+
+    def __getPodioID(self, surveyID):
+        try:
+            podioID = "N/A"
+            survey = ET.fromstring(self.__getSurvey(surveyID))
+            embeddedFields = survey.findall('./EmbeddedData/Field')
+            for ef in embeddedFields:
+                if ef.find('Name').text == 'c':
+                    podioID = ef.find('Value').text
+            return podioID
+        except (urllib2.HTTPError, AttributeError) as e:
+            print surveyID
+            print e
+
+
+## Convenience methods to write data to outfiles
 
     def __writeXML(self, data, filename):
         '''
         Convenience function for writing out XML data to file.
         '''
-        # Write data to temp file
-        doc = open('temp.xml', 'w')
+        filename = "xml/%s.xml" % filename
+        doc = open(filename, 'w')
         doc.write(data)
         doc.close()
-
-        # Parse XML file
-        xml = ET.parse('temp.xml')
-        os.remove('temp.xml')
-        pxml = ET.tostring(xml, pretty_print=True)
-
-        # Write parsed XML to outfile
-        filename = "xml/" + filename + ".xml"
-        srv = open(filename, 'w')
-        srv.write(pxml)
-        srv.close()
 
     def __writeJSON(self, data, filename):
         '''
         Convenience function for writing out JSON data to file.
         '''
         jstr = json.dumps(obj=data, indent=4)
-        fn = "xml/" + filename + ".json"
-        doc = open(fn, 'w')
+        filename = "xml/%s.json" % filename
+        doc = open(filename, 'w')
         doc.write(jstr)
         doc.close()
 
 
 ## Client file IO methods
 
-    def writeMetadata(self):
+    def writeRaw_SurveyMetadata(self):
         '''
         Client method outputs survey metadata to JSON file.
         '''
         svMeta = self.__getSurveyMetadata()
         self.__writeJSON(svMeta, "SV_meta")
 
-    def writeOneSurvey(self):
+    #TODO: Test this method
+    def writeRaw_Survey(self, num=1):
         '''
-        Client method outputs one survey to XML file.
+        Client method outputs specified number of surveys to XML files. Default
+        value is 1; user can also specify "all" to pull all surveys.
         '''
-        svMeta = self.__getSurveyMetadata()
-        svID = self.__genSurveyIDs(svMeta).next()
-        sv = self.__getSurvey(svID)
-        self.__writeXML(sv, svID)
+        sids = self.__genSurveyIDs()
+        svTotal = len(sids)
+        if (num == 'all' or num > svTotal):
+            num = svTotal
+        index = 0
+        while index < num:
+            svID = sids.next()
+            sv = self.__getSurvey(svID)
+            self.__writeXML(sv, svID)
+            index += 1
 
-    def writeAllSurveys(self):
+    # TODO: delete this method if above method works as specified
+    def writeRaw_AllSurveys(self):
         '''
         Client method outputs all available surveys to XML files.
         '''
-        svMeta = self.__getSurveyMetadata()
-        svIDs = self.__genSurveyIDs(svMeta)
+        svIDs = self.__genSurveyIDs()
         for svID in svIDs:
             sv = self.__getSurvey(svID)
             self.__writeXML(sv, svID)
 
-    def writeOneSVResponses(self):
+    # TODO: for human readable output, makes more sense to do all-in-one?
+    def writeRaw_OneSurveyResponses(self):
         '''
         Client method outputs responses for one survey to JSON file.
         '''
-        svMeta = self.__getSurveyMetadata()
-        svID = self.__genSurveyIDs(svMeta).next()
+        svID = self.__genSurveyIDs().next()
         resp = self.__getResponses(svID)
         fn = svID + "_responses"
         self.__writeJSON(resp, fn)
 
 
+## Client data transformation methods
 
-# Default behavior for class pulls a single survey from Qualtrics and outputs as
-# pretty-printed XML. TODO: Pull all surveys.
+    def getParsedSurveyMetadata(self):
+        '''
+        Client method returns dict of relevant survey metadata.
+        '''
+        # Pull relevant data from Qualtrics.
+        svMeta = self.__getSurveyMetadata()
+        surveys = svMeta['Result']['Surveys']
 
+        # For each survey, parse relevant data into new dict.
+        data = dict()
+        for sv in surveys:
+            fields = dict()
+            try:
+                fields['SurveyID'] = sv['SurveyID']
+                fields['PodioID'] = self.__getPodioID(sv['SurveyID'])
+                fields['SurveyName'] = sv['SurveyName']
+                fields['SurveyCreationDate'] = sv['SurveyCreationDate']
+                fields['UserFirstName'] = sv['UserFirstName']
+                fields['UserLastName'] = sv['UserLastName']
+                fields['responses'] = sv['responses']
+            except KeyError as k:
+                fields[k[0]] = 'NULL'
+
+            # Finally, add entry to data dict.
+            data[sv['SurveyID']] = fields
+        self.__writeJSON(data, 'out')
+
+    def getParsedSurveys(self):
+        #TODO: implement
+        pass
+
+    def getParsedResponseMetadata(self):
+        #TODO: implement
+        pass
+
+    def getParsedResponses(self):
+        #TODO: implement
+        pass
+
+
+#TODO: describe default behavior
 if __name__ == '__main__':
 
     # Get survey data from Qualtrics
     qe = QualtricsExtractor()
 
-    # Write samples to file for analysis
-    qe.writeMetadata()
-    qe.writeOneSurvey()
-    qe.writeOneSVResponses()
+    qe.getParsedSurveyMetadata()
