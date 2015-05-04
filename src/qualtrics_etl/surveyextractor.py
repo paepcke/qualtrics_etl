@@ -15,13 +15,18 @@ class QualtricsExtractor(MySQLDB):
         home = expanduser("~")
         userFile = home + '/.ssh/qualtrics_user'
         tokenFile = home + '/.ssh/qualtrics_token'
+        dbFile = home + "/.ssh/mysql_user"
         if os.path.isfile(userFile) == False:
-            sys.exit("User file not found " + userFile)
+            sys.exit("User file not found: " + userFile)
         if os.path.isfile(tokenFile) == False:
-            sys.exit("Token file not found " + tokenFile)
+            sys.exit("Token file not found: " + tokenFile)
+        if os.path.isfile(dbFile) == False:
+            sys.exit("MySQL user credentials not found: " + dbFile)
 
         self.apiuser = None
         self.apitoken = None
+        dbuser = None
+        dbpass = None
 
         with open(userFile, 'r') as f:
             self.apiuser = f.readline().rstrip()
@@ -29,7 +34,11 @@ class QualtricsExtractor(MySQLDB):
         with open(tokenFile, 'r') as f:
             self.apitoken = f.readline().rstrip()
 
-        MySQLDB.__init__(self, db="EdxQualtrics")
+        with open(dbFile, 'r') as f:
+            dbuser = f.readline().rstrip()
+            dbpass = f.readline().rstrip()
+
+        MySQLDB.__init__(self, db="EdxQualtrics", user=dbuser, passwd=dbpass)
 
 ## Database setup helper method for client
 
@@ -54,12 +63,13 @@ class QualtricsExtractor(MySQLDB):
 
         questionTbl = (     """
                             CREATE TABLE `question` (
-                              `SurveyId` varchar(50) DEFAULT NULL,
-                              `questionid` varchar(5000) DEFAULT NULL,
-                              `questiontext` varchar(5000) DEFAULT NULL,
-                              `questiondescription` varchar(5000) DEFAULT NULL,
+                              `SurveyID` varchar(50) DEFAULT NULL,
+                              `QuestionID` varchar(5000) DEFAULT NULL,
+                              `QuestionText` varchar(5000) DEFAULT NULL,
+                              `QuestionDescription` varchar(5000) DEFAULT NULL,
                               `ForceResponse` varchar(50) DEFAULT NULL,
-                              `QuestionType` varchar(50) DEFAULT NULL
+                              `QuestionType` varchar(50) DEFAULT NULL,
+                              `QuestionNumber` varchar(50) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
 
@@ -89,12 +99,12 @@ class QualtricsExtractor(MySQLDB):
         surveyMeta = (      """
                             CREATE TABLE `survey_meta` (
                               `SurveyId` varchar(50) DEFAULT NULL,
+                              `PodioID` varchar(50) DEFAULT NULL,
                               `SurveyCreationDate` datetime DEFAULT NULL,
-                              `userfirstname` varchar(200) DEFAULT NULL,
-                              `userlastname` varchar(200) DEFAULT NULL,
-                              `surveyname` varchar(2000) DEFAULT NULL,
-                              `SurveyOwnerId` varchar(50) DEFAULT NULL,
-                              `SurveyExpirationDate` datetime DEFAULT NULL
+                              `UserFirstName` varchar(200) DEFAULT NULL,
+                              `UserLastName` varchar(200) DEFAULT NULL,
+                              `SurveyName` varchar(2000) DEFAULT NULL,
+                              `responses` varchar(50) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
 
@@ -122,8 +132,10 @@ class QualtricsExtractor(MySQLDB):
         data = self.__getSurveyMetadata()
         surveys = data['Result']['Surveys']
         total = len(surveys)
+        print "Extracting %d surveys from Qualtrics..." % total
         index = 0
-        while index <= total:
+        while index < total:
+            print "Processing survey %d out of %d total." % (index+1, total)
             surveyID = surveys[index]['SurveyID']
             yield surveyID
             index += 1
@@ -134,17 +146,7 @@ class QualtricsExtractor(MySQLDB):
         '''
         url="https://stanforduniversity.qualtrics.com//WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurvey&User=%s&Token=%s&SurveyID=%s" % (self.apiuser, self.apitoken, surveyID)
         data = urllib2.urlopen(url).read()
-
-        # Write data to temp file
-        doc = open('temp.xml', 'w')
-        doc.write(data)
-        doc.close()
-
-        # Parse XML from temp file, clean up and returns
-        xml = ET.parse('temp.xml')
-        os.remove('temp.xml')
-        pxml = ET.tostring(xml, pretty_print=True)
-        return pxml
+        return ET.fromstring(data)
 
     def __getResponses(self, surveyID):
         '''
@@ -155,7 +157,7 @@ class QualtricsExtractor(MySQLDB):
         return data
 
 
-## Helper methods for parsing data from raw Qualtrics exports
+## Helper method for parsing data from raw Qualtrics exports
 
     def __getPodioID(self, surveyID):
         '''
@@ -164,15 +166,16 @@ class QualtricsExtractor(MySQLDB):
         '''
         try:
             podioID = "NULL"
-            survey = ET.fromstring(self.__getSurvey(surveyID))
+            survey = self.__getSurvey(surveyID)
             embeddedFields = survey.findall('./EmbeddedData/Field')
             for ef in embeddedFields:
                 if ef.find('Name').text == 'c':
                     podioID = ef.find('Value').text
-            return podioID
         except (urllib2.HTTPError, AttributeError) as e:
-            # print "%s failed with error: %s" % (surveyID, e)
-            return podioID # Method returns NULL if c field not found
+            # HTTPError indicates survey no longer accessible to user
+            # AttributeError indicates survey not formatted as expected
+            print "%s podioID getter failed with error: %s" % (surveyID, e)
+        return unicode(podioID)
 
 ## Transform methods
 
@@ -182,12 +185,13 @@ class QualtricsExtractor(MySQLDB):
         column names to values for each survey.
         '''
         svMeta = dict()
-        for idx, sv in enumerate(surveys):
+        for idx, sv in enumerate(rawMeta):
             keys = ['SurveyID', 'SurveyName', 'SurveyCreationDate', 'UserFirstName', 'UserLastName', 'responses']
             data = dict()
             for key in keys:
                 try:
-                    data[key] = sv[key]
+                    val = sv[key].replace('"', '')
+                    data[key] = val
                 except KeyError as k:
                     data[k[0]] = 'NULL' # Set value to NULL if no data found
             data['PodioID'] = self.__getPodioID(sv['SurveyID'])
@@ -201,9 +205,14 @@ class QualtricsExtractor(MySQLDB):
          2. a dict of dicts mapping db column names to choices for each question
         Method expects an XML ElementTree object corresponding to a single survey.
         '''
+        #TODO: document changes to this method
         # Get survey from surveyID
-        svRaw = self.__getSurvey(svID)
-        sv = ET.fromstring(svRaw)
+        sv=None
+        try:
+            sv = self.__getSurvey(svID)
+        except urllib2.HTTPError:
+            print "Survey %s not found." % svID
+            return None, None
 
         masterQ = dict()
         masterC = dict()
@@ -213,14 +222,25 @@ class QualtricsExtractor(MySQLDB):
         for idx, q in enumerate(questions):
             parsedQ = dict()
             qID = q.attrib['QuestionID']
-            qkeys = ['ExportTag', 'Type', 'QuestionText', 'QuestionDescription', 'Validation/ForceResponse']
+            qkeys = ['QuestionText', 'QuestionDescription']
             parsedQ['SurveyID'] = svID
             parsedQ['QuestionID'] = qID
-            for key in keys:
+            parsedQ['QuestionNumber'] = q.find('ExportTag').text
+            parsedQ['QuestionType'] = q.find('Type').text
+            try:
+                parsedQ['ForceResponse'] = q.find('Validation/ForceResponse').text
+            except:
+                parsedQ['ForceResponse'] = 'NULL'
+
+            for key in qkeys:
                 try:
-                    parsedq[key] = q.find(key).text
-                except KeyError as k:
-                    parsedq[k[0]] = 'NULL'
+                    text = q.find(key).text.replace('"', '')
+                    if len(text) > 2000:
+                        text = text[0:2000]
+                    parsedQ[key] = text
+                except:
+                    parsedQ[key] = 'NULL'
+
             masterQ[idx] = parsedQ
 
             # For each question, load all choices
@@ -231,7 +251,7 @@ class QualtricsExtractor(MySQLDB):
                 parsedC['QuestionID'] = qID
                 parsedC['ChoiceID'] = c.attrib['ID']
                 cdesc = c.find('Description').text
-                parsedC['Description'] = cdesc.replace("'", "''") if (cdesc is not None) else 'N/A'
+                parsedC['Description'] = cdesc.replace("'", "").replace('"', '') if (cdesc is not None) else 'N/A'
             masterC[qID] = parsedC
 
         return masterQ, masterC
@@ -266,11 +286,16 @@ class QualtricsExtractor(MySQLDB):
     def __loadDB(self, data, tableName):
         '''
         Convenience function for writing data to named table. Expects data to be
-        a dict of dicts mapping column names to values.
+        represented as a list of dicts mapping column names to values.
         '''
         for row in data:
-            query = "INSERT INTO %s(%s) VALUES (%s)" % (tableName, row.keys(), row.values())
-            self.execute(query.encode('UTF-8', 'ignore'))
+            try:
+                cols = ", ".join('%s' % key for key in row.keys())
+                vals = ", ".join('"%s"' % value for value in row.values())
+                query = "INSERT INTO %s(%s) VALUES (%s)" % (tableName, cols, vals)
+                self.execute(query.encode('UTF-8', 'ignore'))
+            except:
+                print "Query failed: %s" % query
 
 
 ## Client file IO methods for raw data from Qualtrics API calls.
@@ -321,20 +346,20 @@ class QualtricsExtractor(MySQLDB):
         rawMeta = self.__getSurveyMetadata()
         svMeta = rawMeta['Result']['Surveys']
         parsedSM = self.__parseSurveyMetadata(svMeta)
-        self.__loadDB(parsedSM, 'survey_meta')
+        self.__loadDB(parsedSM.values(), 'survey_meta')
 
     def loadSurveyData(self):
         '''
         Client method extracts and transforms survey questions and question
         choices and loads to MySQL database using MySQLDB class methods.
         '''
-        sids = self.__getSurveyIDs()
+        sids = self.__genSurveyIDs()
         for svID in sids:
-            masterQ, masterC = self.__parseSurvey(svID)
-            for parsedQ in masterQ.values():
-                self.__loadDB(parsedQ, 'questions')
-            for parsedC in masterC.values():
-                self.__loadDB(parsedC, 'choices')
+            questions, choices = self.__parseSurvey(svID)
+            if (questions == None) or (choices == None):
+                continue
+            self.__loadDB(questions.values(), 'question')
+            self.__loadDB(choices.values(), 'choice')
 
     def loadResponseData(self):
         '''
@@ -343,21 +368,21 @@ class QualtricsExtractor(MySQLDB):
         '''
         sids = self.__getSurveyIDs()
         for svID in sids:
-            resp = self.__getResponses(svID)
-            #TODO: Parse response metadata
-            #TODO: Parse response data
+            responses, respMeta = self.__getResponses(svID)
+            if (responses == None) or (respMeta == None):
+                continue
+            self.__loadDB(responses.values(), 'response')
+            self.__loadDB(respMeta.values(), 'response_metadata')
 
 
 #TODO: Specify and describe default behavior
 if __name__ == '__main__':
 
-    # Get survey data from Qualtrics
+    # Setup MySQL database and extractor class
     qe = QualtricsExtractor()
     qe.setupDB()
 
-    #TODO: Test loadSurveyMetadata and loadSurveyData methods. Check how long
-    # parsing takes per survey and test on a smaller batch before running the
-    # whole thing.
-
-    # qe.loadSurveyMetadata()
-    # qe.loadSurveyData()
+    # Load survey data from Qualtrics
+    # See profiles/ for timing information
+    qe.loadSurveyMetadata() # takes ~2m50s
+    qe.loadSurveyData() # takes ~3m40s
