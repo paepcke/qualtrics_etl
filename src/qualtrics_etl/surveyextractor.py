@@ -46,11 +46,11 @@ class QualtricsExtractor(MySQLDB):
         '''
         Client method loads schema to local MySQL server instance.
         '''
-        self.execute("DROP TABLE IF EXISTS `choice`;")
-        self.execute("DROP TABLE IF EXISTS `question`;")
+        # self.execute("DROP TABLE IF EXISTS `choice`;")
+        # self.execute("DROP TABLE IF EXISTS `question`;")
         self.execute("DROP TABLE IF EXISTS `response`;")
         self.execute("DROP TABLE IF EXISTS `response_metadata`;")
-        self.execute("DROP TABLE IF EXISTS `survey_meta`;")
+        # self.execute("DROP TABLE IF EXISTS `survey_meta`;")
 
         choiceTbl = (       """
                             CREATE TABLE `choice` (
@@ -77,22 +77,28 @@ class QualtricsExtractor(MySQLDB):
                             CREATE TABLE `response` (
                               `SurveyId` varchar(50) DEFAULT NULL,
                               `ResponseId` varchar(50) DEFAULT NULL,
-                              `QuestionId` varchar(50) DEFAULT NULL,
+                              `QuestionNumber` varchar(50) DEFAULT NULL,
                               `AnswerChoiceId` varchar(500) DEFAULT NULL,
-                              `Description` varchar(2000) DEFAULT NULL
+                              `Description` varchar(5000) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
 
         responseMetaTbl = ( """
                             CREATE TABLE `response_metadata` (
-                              `SurveyId` varchar(50) DEFAULT NULL,
-                              `name` varchar(1200) DEFAULT NULL,
+                              `SurveyID` varchar(50) DEFAULT NULL,
+                              `ResponseID` varchar(50) DEFAULT NULL,
+                              `Name` varchar(1200) DEFAULT NULL,
                               `EmailAddress` varchar(50) DEFAULT NULL,
-                              `IpAddress` varchar(50) DEFAULT NULL,
+                              `IPAddress` varchar(50) DEFAULT NULL,
                               `StartDate` datetime DEFAULT NULL,
                               `EndDate` datetime DEFAULT NULL,
-                              `anon_id` varchar(40) DEFAULT NULL,
-                              `ext_id` varchar(40) DEFAULT NULL
+                              `ext_id` varchar(200) DEFAULT NULL,
+                              `ConditionID` varchar(50) DEFAULT NULL,
+                              `ConditionDescription` varchar(500) DEFAULT NULL,
+                              `ResponseSet` varchar(500) DEFAULT NULL,
+                              `ExternalDataReference` varchar(500) DEFAULT NULL,
+                              `Status` varchar(50) DEFAULT NULL,
+                              `Finished` varchar(50) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
 
@@ -108,11 +114,11 @@ class QualtricsExtractor(MySQLDB):
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
 
-        self.execute(choiceTbl)
-        self.execute(questionTbl)
+        # self.execute(choiceTbl)
+        # self.execute(questionTbl)
         self.execute(responseTbl)
         self.execute(responseMetaTbl)
-        self.execute(surveyMeta)
+        # self.execute(surveyMeta)
 
 ## API extractor methods
 
@@ -153,7 +159,10 @@ class QualtricsExtractor(MySQLDB):
         Pull response data for given surveyID from Qualtrics. Returns JSON object.
         '''
         url = "https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getLegacyResponseData&User=%s&Token=%s&Format=JSON&SurveyID=%s&Labels=1" % (self.apiuser, self.apitoken, surveyID)
-        data = json.loads(urllib2.urlopen(url).read())
+        raw = urllib2.urlopen(url).read()
+        data = None
+        if len(raw) > 10:
+            data = json.loads(raw)
         return data
 
 
@@ -205,7 +214,6 @@ class QualtricsExtractor(MySQLDB):
          2. a dict of dicts mapping db column names to choices for each question
         Method expects an XML ElementTree object corresponding to a single survey.
         '''
-        #TODO: document changes to this method
         # Get survey from surveyID
         sv=None
         try:
@@ -245,19 +253,94 @@ class QualtricsExtractor(MySQLDB):
 
             # For each question, load all choices
             choices = q.findall('Choices/Choice')
-            parsedC = dict()
             for c in choices:
+                parsedC = dict()
+                cID = c.attrib['ID']
                 parsedC['SurveyID'] = svID
                 parsedC['QuestionID'] = qID
-                parsedC['ChoiceID'] = c.attrib['ID']
+                parsedC['ChoiceID'] = cID
                 cdesc = c.find('Description').text
                 parsedC['Description'] = cdesc.replace("'", "").replace('"', '') if (cdesc is not None) else 'N/A'
-            masterC[qID] = parsedC
+                masterC[qID+cID] = parsedC
 
         return masterQ, masterC
 
-    def __parseResponses(self):
-        pass
+    def __parseResponses(self, svID):
+        '''
+        Given a survey ID, parses responses from Qualtrics and returns:
+        1. A dict mapping responseIDs to any available metadata
+        2. A dict of dicts containing responses per user per question
+        Method expects a JSON formatted object.
+        '''
+        # Get responses from Qualtrics
+        rsRaw = None
+        try:
+            rsRaw = self.__getResponses(svID)
+        except urllib2.HTTPError:
+            print "  Survey %s not found." % svID
+            return None, None
+
+        # Get total expected responses
+        rq = 'SELECT `responses` FROM survey_meta WHERE SurveyID = "%s"' % svID
+        rnum = self.query(rq).next()
+
+        # Return if API gave us no data
+        if rsRaw == None:
+            print "  Survey %s not found; expected %s responses." % (svID, rnum[0])
+            return None, None
+
+        # Return if no responses
+        print "Parsing %s responses from survey %s..." % (rnum[0], svID)
+        if rnum[0] == 'NULL':
+            return None, None
+
+        responses = dict()
+        respMeta = dict()
+
+        for rID in rsRaw.keys():
+            response = rsRaw[rID]
+
+            # Get response metadata for each response
+            # Method destructively reads question fields
+            rm = dict()
+            rm['SurveyID'] = svID
+            rm['ResponseID'] = rID
+            rm['Name'] = response.pop('Name') if 'Name' in response else 'NULL'
+            rm['EmailAddress'] = response.pop('EmailAddress') if 'EmailAddress' in response else 'NULL'
+            rm['IPAddress'] = response.pop('IPAddress') if 'IPAddress' in response else 'NULL'
+            rm['StartDate'] = response.pop('StartDate') if 'StartDate' in response else 'NULL'
+            rm['EndDate'] = response.pop('EndDate') if 'EndDate' in response else 'NULL'
+            rm['ext_id'] = response.pop('a') if 'a' in response else 'NULL'
+            rm['ConditionID'] = response.pop('idcond') if 'idcond' in response else 'NULL'
+            rm['ConditionDescription'] = response.pop('condition') if 'condition' in response else 'NULL'
+            rm['ResponseSet'] = response.pop('ResponseSet') if 'ResponseSet' in response else 'NULL'
+            rm['ExternalDataReference'] = response.pop('ExternalDataReference') if 'ExternalDataReference' in response else 'NULL'
+            rm['Status'] = response.pop('Status') if 'Status' in response else 'NULL'
+            rm['Finished'] = response.pop('Finished') if 'Finished' in response else 'NULL'
+            respMeta[rID] = rm
+
+            # Parse remaining fields as question answers
+            for q in response.keys():
+                rs = dict()
+                if q and '_' in q:
+                    qSplit = q.split('_')
+                    qNum = qSplit[0]
+                    cID = qSplit[1]
+                else:
+                    qNum = q
+                    cID = 'NULL'
+                rs['SurveyID'] = svID
+                rs['ResponseID'] = rID
+                rs['QuestionNumber'] = qNum
+                rs['AnswerChoiceID'] = cID
+                desc = repr(response[q]).replace('"', '').replace("'", "").replace('\\', '').lstrip('u')
+                if len(desc) >= 5000:
+                    desc = desc[:5000] #trim past max db varchar length
+                rs['Description'] = desc
+                index = rID + "_" + q
+                responses[index] = rs
+
+        return responses, respMeta
 
 ## Convenience methods to write data to outfile.
 
@@ -295,7 +378,7 @@ class QualtricsExtractor(MySQLDB):
                 query = "INSERT INTO %s(%s) VALUES (%s)" % (tableName, cols, vals)
                 self.execute(query.encode('UTF-8', 'ignore'))
             except:
-                print "Query failed: %s" % query
+                print "  Query failed: %s" % query
 
 
 ## Client file IO methods for raw data from Qualtrics API calls.
@@ -361,21 +444,25 @@ class QualtricsExtractor(MySQLDB):
             self.__loadDB(questions.values(), 'question')
             self.__loadDB(choices.values(), 'choice')
 
-    def loadResponseData(self):
+    def loadResponseData(self, startAfter=0):
         '''
         Client method extracts and transforms response data and response metadata
-        and loads to MySQL database using MySQLDB class methods.
+        and loads to MySQL database using MySQLDB class methods. User can specify
+        where to start in the list of surveyIDs.
         '''
-        sids = self.__getSurveyIDs()
-        for svID in sids:
-            responses, respMeta = self.__getResponses(svID)
+        sids = self.__genSurveyIDs()
+        for idx, svID in enumerate(sids):
+            if idx < startAfter:
+                print "  Skipped surveyID %s" % svID
+                continue # skip first n surveys
+            responses, respMeta = self.__parseResponses(svID)
             if (responses == None) or (respMeta == None):
                 continue
             self.__loadDB(responses.values(), 'response')
             self.__loadDB(respMeta.values(), 'response_metadata')
 
 
-#TODO: Specify and describe default behavior
+
 if __name__ == '__main__':
 
     # Setup MySQL database and extractor class
@@ -384,5 +471,6 @@ if __name__ == '__main__':
 
     # Load survey data from Qualtrics
     # See profiles/ for timing information
-    qe.loadSurveyMetadata() # takes ~2m50s
-    qe.loadSurveyData() # takes ~3m40s
+    # qe.loadSurveyMetadata() # takes ~2m50s
+    # qe.loadSurveyData() # takes ~3m40s
+    qe.loadResponseData(startAfter=0) #takes ~2h TODO: Debug, profile
