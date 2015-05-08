@@ -92,7 +92,8 @@ class QualtricsExtractor(MySQLDB):
                               `IPAddress` varchar(50) DEFAULT NULL,
                               `StartDate` datetime DEFAULT NULL,
                               `EndDate` datetime DEFAULT NULL,
-                              `ext_id` varchar(200) DEFAULT NULL,
+                              `a` varchar(200) DEFAULT NULL,
+                              `UID` varchar(200) DEFAULT NULL,
                               `ConditionID` varchar(50) DEFAULT NULL,
                               `ConditionDescription` varchar(500) DEFAULT NULL,
                               `ResponseSet` varchar(500) DEFAULT NULL,
@@ -127,7 +128,6 @@ class QualtricsExtractor(MySQLDB):
         Pull survey metadata from Qualtrics. Returns JSON object.
         '''
         url = "https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurveys&User=%s&Token=%s&Format=JSON&JSONPrettyPrint=1" % (self.apiuser, self.apitoken)
-        print url
         data = json.loads(urllib2.urlopen(url).read())
         return data
 
@@ -159,10 +159,14 @@ class QualtricsExtractor(MySQLDB):
         Pull response data for given surveyID from Qualtrics. Returns JSON object.
         '''
         url = "https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getLegacyResponseData&User=%s&Token=%s&Format=JSON&SurveyID=%s&Labels=1" % (self.apiuser, self.apitoken, surveyID)
-        raw = urllib2.urlopen(url).read()
-        data = None
-        if len(raw) > 10:
-            data = json.loads(raw)
+        raw = None
+        while True:
+            raw = urllib2.urlopen(url).read() # try until API puts out
+            if len(raw) > 10:
+                print "  API request for %s successful." % surveyID
+                break
+            print "  API request failed. Retrying..."
+        data = json.loads(raw)
         return data
 
 
@@ -181,7 +185,7 @@ class QualtricsExtractor(MySQLDB):
                 if ef.find('Name').text == 'c':
                     podioID = ef.find('Value').text
         except (urllib2.HTTPError, AttributeError) as e:
-            # HTTPError indicates survey no longer accessible to user
+            # HTTPError indicates survey not accessible to user
             # AttributeError indicates survey not formatted as expected
             print "%s podioID getter failed with error: %s" % (surveyID, e)
         return unicode(podioID)
@@ -276,8 +280,8 @@ class QualtricsExtractor(MySQLDB):
         rsRaw = None
         try:
             rsRaw = self.__getResponses(svID)
-        except urllib2.HTTPError:
-            print "  Survey %s not found." % svID
+        except urllib2.HTTPError as e:
+            print "  Survey %s gave error '%s'." % (svID, e)
             return None, None
 
         # Get total expected responses
@@ -299,24 +303,26 @@ class QualtricsExtractor(MySQLDB):
 
         for rID in rsRaw.keys():
             response = rsRaw[rID]
+            vals = response.keys()
 
             # Get response metadata for each response
             # Method destructively reads question fields
             rm = dict()
             rm['SurveyID'] = svID
             rm['ResponseID'] = rID
-            rm['Name'] = response.pop('Name') if 'Name' in response else 'NULL'
-            rm['EmailAddress'] = response.pop('EmailAddress') if 'EmailAddress' in response else 'NULL'
-            rm['IPAddress'] = response.pop('IPAddress') if 'IPAddress' in response else 'NULL'
-            rm['StartDate'] = response.pop('StartDate') if 'StartDate' in response else 'NULL'
-            rm['EndDate'] = response.pop('EndDate') if 'EndDate' in response else 'NULL'
-            rm['ext_id'] = response.pop('a') if 'a' in response else 'NULL'
-            rm['ConditionID'] = response.pop('idcond') if 'idcond' in response else 'NULL'
-            rm['ConditionDescription'] = response.pop('condition') if 'condition' in response else 'NULL'
-            rm['ResponseSet'] = response.pop('ResponseSet') if 'ResponseSet' in response else 'NULL'
-            rm['ExternalDataReference'] = response.pop('ExternalDataReference') if 'ExternalDataReference' in response else 'NULL'
-            rm['Status'] = response.pop('Status') if 'Status' in response else 'NULL'
-            rm['Finished'] = response.pop('Finished') if 'Finished' in response else 'NULL'
+            rm['Name'] = response.pop('Name') if 'Name' in vals else 'NULL'
+            rm['EmailAddress'] = response.pop('EmailAddress') if 'EmailAddress' in vals else 'NULL'
+            rm['IPAddress'] = response.pop('IPAddress') if 'IPAddress' in vals else 'NULL'
+            rm['StartDate'] = response.pop('StartDate') if 'StartDate' in vals else 'NULL'
+            rm['EndDate'] = response.pop('EndDate') if 'EndDate' in vals else 'NULL'
+            rm['ConditionID'] = response.pop('idcond') if 'idcond' in vals else 'NULL'
+            rm['ConditionDescription'] = response.pop('condition') if 'condition' in vals else 'NULL'
+            rm['ResponseSet'] = response.pop('ResponseSet') if 'ResponseSet' in vals else 'NULL'
+            rm['ExternalDataReference'] = response.pop('ExternalDataReference') if 'ExternalDataReference' in vals else 'NULL'
+            rm['Status'] = response.pop('Status') if 'Status' in vals else 'NULL'
+            rm['Finished'] = response.pop('Finished') if 'Finished' in vals else 'NULL'
+            rm['a'] = response.pop('a') if 'a' in vals else 'NULL'
+            rm['UID'] = response.pop('UID') if 'UID' in vals else 'NULL'
             respMeta[rID] = rm
 
             # Parse remaining fields as question answers
@@ -473,4 +479,4 @@ if __name__ == '__main__':
     # See profiles/ for timing information
     # qe.loadSurveyMetadata() # takes ~2m50s
     # qe.loadSurveyData() # takes ~3m40s
-    qe.loadResponseData(startAfter=0) #takes ~2h TODO: Debug, profile
+    qe.loadResponseData(startAfter=169) #takes ~2h TODO: Debug, profile
