@@ -5,6 +5,7 @@ import os.path
 import sys
 import xml.etree.ElementTree as ET
 from pymysql_utils1 import MySQLDB
+from string import Template
 
 class QualtricsExtractor(MySQLDB):
 
@@ -94,6 +95,7 @@ class QualtricsExtractor(MySQLDB):
                               `EndDate` datetime DEFAULT NULL,
                               `a` varchar(200) DEFAULT NULL,
                               `UID` varchar(200) DEFAULT NULL,
+                              `user_id` varchar(200) DEFAULT NULL,
                               `ConditionID` varchar(50) DEFAULT NULL,
                               `ConditionDescription` varchar(500) DEFAULT NULL,
                               `ResponseSet` varchar(500) DEFAULT NULL,
@@ -141,8 +143,8 @@ class QualtricsExtractor(MySQLDB):
         print "Extracting %d surveys from Qualtrics..." % total
         index = 0
         while index < total:
-            print "Processing survey %d out of %d total." % (index+1, total)
             surveyID = surveys[index]['SurveyID']
+            print "Processing survey %d out of %d total: %s" % (index+1, total, surveyID)
             yield surveyID
             index += 1
 
@@ -156,30 +158,54 @@ class QualtricsExtractor(MySQLDB):
 
     def __getResponses(self, surveyID):
         '''
-        Pull response data for given surveyID from Qualtrics. Returns JSON object.
+        Pull response data for given surveyID from Qualtrics. Method generates
+        JSON objects containing batches of 5000 surveys.
         '''
-        url = "https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getLegacyResponseData&User=%s&Token=%s&Format=JSON&SurveyID=%s&Labels=1" % (self.apiuser, self.apitoken, surveyID)
-        raw = None
-        while True:
-            raw = urllib2.urlopen(url).read() # try until API puts out
-            if len(raw) > 10:
-                print "  API request for %s successful." % surveyID
-                break
-            print "  API request failed. Retrying..."
-        data = json.loads(raw)
+        # Get expected number of responses
+        rq = 'SELECT `responses` FROM survey_meta WHERE SurveyID = "%s"' % surveyID
+        expect = self.query(rq).next()
+        if expect[0] == 'NULL':
+            return None # if we don't expect any responses, don't bother asking
+        else:
+            expect = int(expect[0])
+
+        print " Expecting ~%d responses." % expect
+
+        # Request responses in batches of 5000 and merge to single dict
+        urlTemp = Template("https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getLegacyResponseData&User=${user}&Token=${token}&Format=JSON&SurveyID=${svid}${lrid}&Limit=${bsize}&Labels=1")
+        lastresp = ''
+        batchSize = 5000
+        total = 0
+        data = dict()
+        while total < expect:
+            # Fetch another batch and update master
+            url = urlTemp.substitute(user=self.apiuser, token=self.apitoken, svid=surveyID, lrid=lastresp, bsize=batchSize)
+            raw = urllib2.urlopen(url).read()
+            batch = json.loads(raw)
+            data.update(batch)
+
+            # For next iteration, determine last response + advance response total
+            # TODO: I think this doesn't produce duplicates, but it's hard to say for certain
+            rIDs = batch.keys()
+            rID_locs = map(lambda x: raw.find(x), rIDs)
+            rID_lookup = dict(zip(rID_locs, rIDs))
+            lastresp = '&LastResponseID=' + rID_lookup[max(rID_locs)]
+            total += len(batch.keys())
+
+        print " Retrieved %d responses." % len(data.keys())
+
         return data
 
 
-## Helper method for parsing data from raw Qualtrics exports
+## Helper method for assigning PodioID from surveys to survey_meta table
 
-    def __getPodioID(self, surveyID):
+    def __assignPodioID(self, survey, surveyID):
         '''
-        Given a surveyID from Qualtrics, finds embedded field 'c' and returns
+        Given a survey from Qualtrics, finds embedded field 'c' and returns
         field value. For mapping surveys to course names via Podio project IDs.
         '''
         try:
             podioID = "NULL"
-            survey = self.__getSurvey(surveyID)
             embeddedFields = survey.findall('./EmbeddedData/Field')
             for ef in embeddedFields:
                 if ef.find('Name').text == 'c':
@@ -188,7 +214,11 @@ class QualtricsExtractor(MySQLDB):
             # HTTPError indicates survey not accessible to user
             # AttributeError indicates survey not formatted as expected
             print "%s podioID getter failed with error: %s" % (surveyID, e)
-        return unicode(podioID)
+
+        # Update DB with retrieved Podio ID
+        query = "UPDATE survey_meta SET PodioID='%s' WHERE SurveyId='%s'" % (podioID, surveyID)
+        self.execute(query.encode('UTF-8', 'ignore'))
+
 
 ## Transform methods
 
@@ -207,7 +237,6 @@ class QualtricsExtractor(MySQLDB):
                     data[key] = val
                 except KeyError as k:
                     data[k[0]] = 'NULL' # Set value to NULL if no data found
-            data['PodioID'] = self.__getPodioID(sv['SurveyID'])
             svMeta[idx] = data # Finally, add row to master dict
         return svMeta
 
@@ -228,6 +257,9 @@ class QualtricsExtractor(MySQLDB):
 
         masterQ = dict()
         masterC = dict()
+
+        # Handle PodioID mapping
+        self.__assignPodioID(sv, svID)
 
         # Parse data for each question
         questions = sv.findall('./Questions/Question')
@@ -284,19 +316,16 @@ class QualtricsExtractor(MySQLDB):
             print "  Survey %s gave error '%s'." % (svID, e)
             return None, None
 
-        # Get total expected responses
-        rq = 'SELECT `responses` FROM survey_meta WHERE SurveyID = "%s"' % svID
-        rnum = self.query(rq).next()
-
         # Return if API gave us no data
         if rsRaw == None:
             print "  Survey %s not found; expected %s responses." % (svID, rnum[0])
             return None, None
 
-        # Return if no responses
-        print "Parsing %s responses from survey %s..." % (rnum[0], svID)
-        if rnum[0] == 'NULL':
-            return None, None
+        # Get total expected responses
+        rq = 'SELECT `responses` FROM survey_meta WHERE SurveyID = "%s"' % svID
+        rnum = self.query(rq).next()
+
+        print " Parsing %s responses from survey %s..." % (rnum[0], svID)
 
         responses = dict()
         respMeta = dict()
@@ -310,19 +339,20 @@ class QualtricsExtractor(MySQLDB):
             rm = dict()
             rm['SurveyID'] = svID
             rm['ResponseID'] = rID
-            rm['Name'] = response.pop('Name') if 'Name' in vals else 'NULL'
-            rm['EmailAddress'] = response.pop('EmailAddress') if 'EmailAddress' in vals else 'NULL'
-            rm['IPAddress'] = response.pop('IPAddress') if 'IPAddress' in vals else 'NULL'
-            rm['StartDate'] = response.pop('StartDate') if 'StartDate' in vals else 'NULL'
-            rm['EndDate'] = response.pop('EndDate') if 'EndDate' in vals else 'NULL'
-            rm['ConditionID'] = response.pop('idcond') if 'idcond' in vals else 'NULL'
-            rm['ConditionDescription'] = response.pop('condition') if 'condition' in vals else 'NULL'
-            rm['ResponseSet'] = response.pop('ResponseSet') if 'ResponseSet' in vals else 'NULL'
-            rm['ExternalDataReference'] = response.pop('ExternalDataReference') if 'ExternalDataReference' in vals else 'NULL'
-            rm['Status'] = response.pop('Status') if 'Status' in vals else 'NULL'
-            rm['Finished'] = response.pop('Finished') if 'Finished' in vals else 'NULL'
-            rm['a'] = response.pop('a') if 'a' in vals else 'NULL'
-            rm['UID'] = response.pop('UID') if 'UID' in vals else 'NULL'
+            rm['Name'] = response.pop('Name', 'NULL')
+            rm['EmailAddress'] = response.pop('EmailAddress', 'NULL') if 'EmailAddress' in vals else 'NULL'
+            rm['IPAddress'] = response.pop('IPAddress', 'NULL')
+            rm['StartDate'] = response.pop('StartDate', 'NULL')
+            rm['EndDate'] = response.pop('EndDate', 'NULL')
+            rm['ConditionID'] = response.pop('idcond', 'NULL')
+            rm['ConditionDescription'] = response.pop('condition', 'NULL')
+            rm['ResponseSet'] = response.pop('ResponseSet', 'NULL')
+            rm['ExternalDataReference'] = response.pop('ExternalDataReference', 'NULL')
+            rm['Status'] = response.pop('Status', 'NULL')
+            rm['Finished'] = response.pop('Finished', 'NULL')
+            rm['a'] = response.pop('a', 'NULL')
+            rm['UID'] = response.pop('UID', 'NULL')
+            rm['user_id'] = response.pop('user_id', 'NULL')
             respMeta[rID] = rm
 
             # Parse remaining fields as question answers
@@ -468,6 +498,9 @@ class QualtricsExtractor(MySQLDB):
             self.__loadDB(respMeta.values(), 'response_metadata')
 
 
+    def printRaw(self, svID):
+        print "Requesting response data for survey: %s" % svID
+        self.__getResponses(svID)
 
 if __name__ == '__main__':
 
@@ -477,6 +510,6 @@ if __name__ == '__main__':
 
     # Load survey data from Qualtrics
     # See profiles/ for timing information
-    # qe.loadSurveyMetadata() # takes ~2m50s
-    # qe.loadSurveyData() # takes ~3m40s
-    qe.loadResponseData(startAfter=169) #takes ~2h TODO: Debug, profile
+    # qe.loadSurveyMetadata() # takes <1s
+    # qe.loadSurveyData() # takes ~3m
+    qe.loadResponseData() #TODO: time, profile
