@@ -6,6 +6,9 @@ import sys
 import xml.etree.ElementTree as ET
 from pymysql_utils1 import MySQLDB
 from string import Template
+import zipfile as z
+import StringIO as sio
+from collections import OrderedDict
 
 class QualtricsExtractor(MySQLDB):
 
@@ -126,13 +129,11 @@ class QualtricsExtractor(MySQLDB):
         self.execute(surveyMeta)
 
 ## API extractor methods
-# TODO: Make these calls from the Qualtrics 3.0 API to increase speed
 
     def __getSurveyMetadata(self):
         '''
-        Pull survey metadata from Qualtrics. Returns JSON object.
+        Pull survey metadata from Qualtrics API v2.4. Returns JSON object.
         '''
-        #TODO: Use Q3.0 API
         url = "https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurveys&User=%s&Token=%s&Format=JSON&JSONPrettyPrint=1" % (self.apiuser, self.apitoken)
         data = json.loads(urllib2.urlopen(url).read())
         return data
@@ -154,9 +155,9 @@ class QualtricsExtractor(MySQLDB):
 
     def __getSurvey(self, surveyID):
         '''
-        Pull survey data for given surveyID from Qualtrics. Returns XML string.
+        Pull survey data for given surveyID from Qualtrics API v2.4. Returns XML string.
         '''
-        #TODO: This call will should now return a JSON object from Q3.0 API
+        #TODO: This call chould now return a JSON object from Q3.0 API
         url="https://stanforduniversity.qualtrics.com//WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurvey&User=%s&Token=%s&SurveyID=%s" % (self.apiuser, self.apitoken, surveyID)
         data = urllib2.urlopen(url).read()
         return ET.fromstring(data)
@@ -168,38 +169,20 @@ class QualtricsExtractor(MySQLDB):
         '''
         #TODO: Use Q3.0 API, more reliable for large numbers of responses
         #TODO: Use an ordered dict here instead of the default json.loads behavior
-        # Get expected number of responses
-        rq = 'SELECT `responses` FROM survey_meta WHERE SurveyID = "%s"' % surveyID
-        expect = self.query(rq).next()
-        if expect[0] == 'NULL':
-            return None # if we don't expect any responses, don't bother asking
-        else:
-            expect = int(expect[0])
 
-        print " Expecting ~%d responses." % expect
+        urlTemp = Template("https://dc-viawest.qualtrics.com:443/API/v1/surveys/${svid}/responseExports?apiToken=${tk}&fileType=JSON")
+        reqURL = urlTemp.substitute(svid=surveyID, tk=self.apitoken)
+        req = json.loads(urllib2.urlopen(reqURL).read())
 
-        # Request responses in batches of 5000 and merge to single dict
-        urlTemp = Template("https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getLegacyResponseData&User=${user}&Token=${token}&Format=JSON&SurveyID=${svid}${lrid}&Limit=${bsize}&Labels=1")
-        lastresp = ''
-        batchSize = 5000
-        total = 0
-        data = dict()
-        while total < expect:
-            # Fetch another batch and update master
-            url = urlTemp.substitute(user=self.apiuser, token=self.apitoken, svid=surveyID, lrid=lastresp, bsize=batchSize)
-            raw = urllib2.urlopen(url).read()
-            batch = json.loads(raw)
-            data.update(batch)
+        statURL = req['result']['exportStatus'] + "?apiToken=" + self.apitoken
+        stat = json.loads(urllib2.urlopen(statURL).read())
 
-            # For next iteration, determine last response + advance response total
-            # TODO: I think this doesn't produce duplicates, but it's hard to say for certain
-            rIDs = batch.keys()
-            rID_locs = map(lambda x: raw.find(x), rIDs)
-            rID_lookup = dict(zip(rID_locs, rIDs))
-            lastresp = '&LastResponseID=' + rID_lookup[max(rID_locs)]
-            total += len(batch.keys())
-
-        print " Retrieved %d responses." % len(data.keys())
+        dataURL = stat['result']['fileUrl']
+        remote = urllib2.urlopen(dataURL).read()
+        dataZip = sio.StringIO(remote)
+        archive = z.ZipFile(dataZip, 'r')
+        dataFile = archive.namelist()[0]
+        data = json.loads(archive.read(dataFile), object_pairs_hook=OrderedDict)
 
         return data
 
