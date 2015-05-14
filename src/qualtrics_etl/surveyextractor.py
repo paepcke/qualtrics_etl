@@ -47,11 +47,11 @@ class QualtricsExtractor(MySQLDB):
         '''
         Client method loads schema to local MySQL server instance.
         '''
-        # self.execute("DROP TABLE IF EXISTS `choice`;")
-        # self.execute("DROP TABLE IF EXISTS `question`;")
+        self.execute("DROP TABLE IF EXISTS `choice`;")
+        self.execute("DROP TABLE IF EXISTS `question`;")
         self.execute("DROP TABLE IF EXISTS `response`;")
         self.execute("DROP TABLE IF EXISTS `response_metadata`;")
-        # self.execute("DROP TABLE IF EXISTS `survey_meta`;")
+        self.execute("DROP TABLE IF EXISTS `survey_meta`;")
 
         choiceTbl = (       """
                             CREATE TABLE `choice` (
@@ -73,6 +73,8 @@ class QualtricsExtractor(MySQLDB):
                               `QuestionNumber` varchar(50) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
+                            # TODO: Page number
+                            # TODO: Number on page
 
         responseTbl = (     """
                             CREATE TABLE `response` (
@@ -117,18 +119,20 @@ class QualtricsExtractor(MySQLDB):
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
 
-        # self.execute(choiceTbl)
-        # self.execute(questionTbl)
+        self.execute(choiceTbl)
+        self.execute(questionTbl)
         self.execute(responseTbl)
         self.execute(responseMetaTbl)
-        # self.execute(surveyMeta)
+        self.execute(surveyMeta)
 
 ## API extractor methods
+# TODO: Make these calls from the Qualtrics 3.0 API to increase speed
 
     def __getSurveyMetadata(self):
         '''
         Pull survey metadata from Qualtrics. Returns JSON object.
         '''
+        #TODO: Use Q3.0 API
         url = "https://stanforduniversity.qualtrics.com/WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurveys&User=%s&Token=%s&Format=JSON&JSONPrettyPrint=1" % (self.apiuser, self.apitoken)
         data = json.loads(urllib2.urlopen(url).read())
         return data
@@ -152,6 +156,7 @@ class QualtricsExtractor(MySQLDB):
         '''
         Pull survey data for given surveyID from Qualtrics. Returns XML string.
         '''
+        #TODO: This call will should now return a JSON object from Q3.0 API
         url="https://stanforduniversity.qualtrics.com//WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurvey&User=%s&Token=%s&SurveyID=%s" % (self.apiuser, self.apitoken, surveyID)
         data = urllib2.urlopen(url).read()
         return ET.fromstring(data)
@@ -161,6 +166,8 @@ class QualtricsExtractor(MySQLDB):
         Pull response data for given surveyID from Qualtrics. Method generates
         JSON objects containing batches of 5000 surveys.
         '''
+        #TODO: Use Q3.0 API, more reliable for large numbers of responses
+        #TODO: Use an ordered dict here instead of the default json.loads behavior
         # Get expected number of responses
         rq = 'SELECT `responses` FROM survey_meta WHERE SurveyID = "%s"' % surveyID
         expect = self.query(rq).next()
@@ -247,6 +254,8 @@ class QualtricsExtractor(MySQLDB):
          2. a dict of dicts mapping db column names to choices for each question
         Method expects an XML ElementTree object corresponding to a single survey.
         '''
+        # TODO: Table describing survey flow
+        # TODO: 3.0 API has exportColumnMap field to get between QIDs and user Q labels
         # Get survey from surveyID
         sv=None
         try:
@@ -258,7 +267,7 @@ class QualtricsExtractor(MySQLDB):
         masterQ = dict()
         masterC = dict()
 
-        # Handle PodioID mapping
+        # Handle PodioID mapping in survey_meta table
         self.__assignPodioID(sv, svID)
 
         # Parse data for each question
@@ -308,6 +317,8 @@ class QualtricsExtractor(MySQLDB):
         2. A dict of dicts containing responses per user per question
         Method expects a JSON formatted object.
         '''
+        #TODO: In response_metadata, make query to edxprod to get anon_user_id
+        #TODO: In survey_meta, add LastResponse column (for speedier updates)??
         # Get responses from Qualtrics
         rsRaw = None
         try:
@@ -407,14 +418,15 @@ class QualtricsExtractor(MySQLDB):
         Convenience function for writing data to named table. Expects data to be
         represented as a list of dicts mapping column names to values.
         '''
-        for row in data:
-            try:
-                cols = ", ".join('%s' % key for key in row.keys())
-                vals = ", ".join('"%s"' % value for value in row.values())
-                query = "INSERT INTO %s(%s) VALUES (%s)" % (tableName, cols, vals)
-                self.execute(query.encode('UTF-8', 'ignore'))
-            except:
-                print "  Query failed: %s" % query
+        try:
+            columns = tuple(data[0].keys())
+            table = []
+            for row in data:
+                vals = tuple(row.values())
+                table.append(vals)
+            self.bulkInsert(tableName, columns, table)
+        except:
+            print "  Query failed!"
 
 
 ## Client file IO methods for raw data from Qualtrics API calls.
@@ -498,9 +510,6 @@ class QualtricsExtractor(MySQLDB):
             self.__loadDB(respMeta.values(), 'response_metadata')
 
 
-    def printRaw(self, svID):
-        print "Requesting response data for survey: %s" % svID
-        self.__getResponses(svID)
 
 if __name__ == '__main__':
 
@@ -510,6 +519,6 @@ if __name__ == '__main__':
 
     # Load survey data from Qualtrics
     # See profiles/ for timing information
-    # qe.loadSurveyMetadata() # takes <1s
+    qe.loadSurveyMetadata() # takes <1s
     # qe.loadSurveyData() # takes ~3m
-    qe.loadResponseData() #TODO: time, profile
+    # qe.loadResponseData(startAfter=50) #TODO: time, profile
