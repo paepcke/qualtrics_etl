@@ -29,7 +29,7 @@ class MySQLDB(object):
 
     def __init__(self, host='127.0.0.1', port=3306, user='root', passwd='', db='mysql'):
         '''
-        
+
         @param host: MySQL host
         @type host: string
         @param port: MySQL host's port
@@ -41,11 +41,11 @@ class MySQLDB(object):
         @param db: database to connect to within server
         @type db: string
         '''
-        
+
         # If all arguments are set to None, we are unittesting:
         if all(arg is None for arg in (host,port,user,passwd,db)):
             return
-        
+
         self.user = user
         self.pwd  = passwd
         self.db   = db
@@ -53,16 +53,16 @@ class MySQLDB(object):
         self.cursors = []
         try:
             #self.connection = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db)
-            #self.connection = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db,charset='utf8') 
-            print 'c1onnected boo'            
+            #self.connection = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db,charset='utf8')
+            print 'c1onnected boo'
             self.connection = MySQLdb.connect(host=host, port=port, user=user, passwd=passwd, db=db, local_infile=1)
-        
+
         except MySQLdb.OperationalError:
         #except pymysql.OperationalError:
             pwd = '...............' if len(passwd) > 0 else '<no password>'
             raise ValueError('Cannot reach MySQL server with host:%s, port:%s, user:%s, pwd:%s, db:%s' %
                              (host, port, user, pwd, db))
-        
+
     def close(self):
         '''
         Close all cursors that are currently still open.
@@ -80,7 +80,7 @@ class MySQLDB(object):
     def createTable(self, tableName, schema, temporary=False):
         '''
         Create new table, given its name, and schema.
-        The schema is a dict mappingt column names to 
+        The schema is a dict mappingt column names to
         column types. Example: {'col1' : 'INT', 'col2' : 'TEXT'}
         @param tableName: name of new table
         @type tableName: String
@@ -141,19 +141,19 @@ class MySQLDB(object):
             self.connection.commit()
         finally:
             cursor.close()
-    
+
     def bulkInsert(self, tblName, colNameTuple, valueTupleArray):
         '''
         Inserts large number of rows into given table. Strategy: write
         the values to a temp file, then generate a LOAD INFILE LOCAL
-        MySQL command. Execute that command via subprocess.call(). 
+        MySQL command. Execute that command via subprocess.call().
         Using a cursor.execute() fails with error 'LOAD DATA LOCAL
         is not supported in this MySQL version...' even though MySQL
         is set up to allow the op (load-infile=1 for both mysql and
         mysqld in my.cnf).
         @param tblName: table into which to insert
         @type tblName: string
-        @param colNameTuple: tuple containing column names in proper order, i.e. 
+        @param colNameTuple: tuple containing column names in proper order, i.e.
                 corresponding to valueTupleArray orders.
         @type colNameTuple: (str[,str[...]])
         @param valueTupleArray: array of n-tuples, which hold the values. Order of
@@ -162,14 +162,14 @@ class MySQLDB(object):
         '''
         tmpCSVFile = tempfile.NamedTemporaryFile(dir='/tmp',prefix='userCountryTmp',suffix='.csv')
         self.csvWriter = csv.writer(tmpCSVFile, dialect='excel-tab', lineterminator='\n', delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        # Can't use csvWriter.writerows() b/c some rows have 
-        # weird chars: self.csvWriter.writerows(valueTupleArray)        
+        # Can't use csvWriter.writerows() b/c some rows have
+        # weird chars: self.csvWriter.writerows(valueTupleArray)
         for row in valueTupleArray:
             # Convert each element in row to a string,
             # including mixed-in Unicode Strings:
             self.csvWriter.writerow([rowElement for rowElement in self.stringifyList(row)])
         tmpCSVFile.flush()
-        
+
         # Create the MySQL column name list needed in the LOAD INFILE below.
         # We need '(colName1,colName2,...)':
         if len(colNameTuple) == 0:
@@ -178,7 +178,7 @@ class MySQLDB(object):
             colSpec = '(' + colNameTuple[0]
             for colName in colNameTuple[1:]:
                 colSpec += ',' + colName
-            colSpec += ')'   
+            colSpec += ')'
         try:
             # Remove quotes from the values inside the colNameTuple's:
             mySQLCmd = ("USE %s; LOAD DATA LOCAL INFILE '%s' INTO TABLE %s FIELDS TERMINATED BY ',' " +\
@@ -190,7 +190,7 @@ class MySQLDB(object):
                 subprocess.call(['mysql', '--local_infile=1', '-u', self.user, '-e', mySQLCmd])
         finally:
             tmpCSVFile.close()
-    
+
     def update(self, tblName, colName, newVal, fromCondition=None):
         '''
         Update one column with a new value.
@@ -198,8 +198,8 @@ class MySQLDB(object):
         @type tblName: String
         @param colName: column whose value is to be changed
         @type colName: String
-        @param newVal: value acceptable to MySQL for the given column 
-        @type newVal: type acceptable to MySQL for the given column 
+        @param newVal: value acceptable to MySQL for the given column
+        @type newVal: type acceptable to MySQL for the given column
         @param fromCondition: optionally condition that selects which rows to update.
                       if None, the named column in all rows are updated to
                       the given value. Syntax must conform to what may be in
@@ -216,23 +216,23 @@ class MySQLDB(object):
             self.connection.commit()
         finally:
             cursor.close()
-            
-    def execute(self,query):                                                                                   
+
+    def execute(self,query):
         '''
         Execute an arbitrary query, including
         MySQL directives.
         @param query: query or directive
         @type query: String
         '''
-        
-        cursor=self.connection.cursor()                                                                        
-        try:                                                                                                   
-            cursor.execute(query)                                                                              
-            self.connection.commit()                                                                           
-        finally:                                                                                               
-            cursor.close()                                                                                     
-                                                                                                               
-    def executeParameterized(self,query,params):                                                                      
+
+        cursor=self.connection.cursor()
+        try:
+            cursor.execute(query)
+            self.connection.commit()
+        finally:
+            cursor.close()
+
+    def executeParameterized(self,query,params):
         '''
         Executes arbitrary query that is parameterized
         as in the Python string format statement. Ex:
@@ -242,15 +242,15 @@ class MySQLDB(object):
         @param params: actuals for the parameters
         @type params: (<any>)
         '''
-        cursor=self.connection.cursor()                                                                        
-        
+        cursor=self.connection.cursor()
 
-        try:                                                                                                   
-            cursor.execute(query,params)                                                                       
-            self.connection.commit()    
-        finally:                                                                                               
-            cursor.close()  
-                    
+
+        try:
+            cursor.execute(query,params)
+            self.connection.commit()
+        finally:
+            cursor.close()
+
     def ensureSQLTyping(self, colVals):
         '''
         Given a list of items, return a string that preserves
@@ -266,8 +266,8 @@ class MySQLDB(object):
                 resList.append('"%s"' % el.encode('UTF-8', 'ignore'))
             else:
                 resList.append(el)
-        return ','.join(map(str,resList))        
-        
+        return ','.join(map(str,resList))
+
     def query(self, queryStr):
         '''
         Query iterator. Given a query, return one result for each
@@ -293,7 +293,7 @@ class MySQLDB(object):
         to turn into a string, part of which attempts encoding
         with the 'ascii' codec. Then encountering a unicode
         char, that char is UTF-8 encoded.
-        
+
         Acts as an iterator! Use like:
         for element in stringifyList(someList):
             print(element)
@@ -304,6 +304,4 @@ class MySQLDB(object):
             try:
                 yield(str(element))
             except UnicodeEncodeError:
-                print 'unicode error'
                 yield element.encode('UTF-8','ignore')
-    

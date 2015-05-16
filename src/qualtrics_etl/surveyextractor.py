@@ -9,6 +9,8 @@ from string import Template
 import zipfile as z
 import StringIO as sio
 from collections import OrderedDict
+import getopt
+import time
 
 class QualtricsExtractor(MySQLDB):
 
@@ -76,8 +78,7 @@ class QualtricsExtractor(MySQLDB):
                               `QuestionNumber` varchar(50) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
-                            # TODO: Page number
-                            # TODO: Number on page
+                            # TODO: Page number and order on page
 
         responseTbl = (     """
                             CREATE TABLE `response` (
@@ -96,17 +97,21 @@ class QualtricsExtractor(MySQLDB):
                               `Name` varchar(1200) DEFAULT NULL,
                               `EmailAddress` varchar(50) DEFAULT NULL,
                               `IPAddress` varchar(50) DEFAULT NULL,
+                              `LocationLatitude` float DEFAULT NULL,
+                              `LocationLongitude` float DEFAULT NULL,
                               `StartDate` datetime DEFAULT NULL,
                               `EndDate` datetime DEFAULT NULL,
+                              `ResponseSet` varchar(50) DEFAULT NULL,
+                              `ExternalDataReference` varchar(200) DEFAULT NULL,
                               `a` varchar(200) DEFAULT NULL,
                               `UID` varchar(200) DEFAULT NULL,
-                              `user_id` varchar(200) DEFAULT NULL,
-                              `ConditionID` varchar(50) DEFAULT NULL,
-                              `ConditionDescription` varchar(500) DEFAULT NULL,
-                              `ResponseSet` varchar(500) DEFAULT NULL,
-                              `ExternalDataReference` varchar(500) DEFAULT NULL,
-                              `Status` varchar(50) DEFAULT NULL,
-                              `Finished` varchar(50) DEFAULT NULL
+                              `userid` varchar(200) DEFAULT NULL,
+                              `StudentID` varchar(200) DEFAULT NULL,
+                              `idcond` varchar(200) DEFAULT NULL,
+                              `ConditionText` varchar(200) DEFAULT NULL,
+                              `advance` varchar(200) DEFAULT NULL,
+                              `Finished` varchar(50) DEFAULT NULL,
+                              `Status` varchar (200) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
 
@@ -118,7 +123,8 @@ class QualtricsExtractor(MySQLDB):
                               `UserFirstName` varchar(200) DEFAULT NULL,
                               `UserLastName` varchar(200) DEFAULT NULL,
                               `SurveyName` varchar(2000) DEFAULT NULL,
-                              `responses` varchar(50) DEFAULT NULL
+                              `responses` varchar(50) DEFAULT NULL,
+                              `LastResponse` varchar(50) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
 
@@ -157,7 +163,6 @@ class QualtricsExtractor(MySQLDB):
         '''
         Pull survey data for given surveyID from Qualtrics API v2.4. Returns XML string.
         '''
-        #TODO: This call chould now return a JSON object from Q3.0 API
         url="https://stanforduniversity.qualtrics.com//WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurvey&User=%s&Token=%s&SurveyID=%s" % (self.apiuser, self.apitoken, surveyID)
         data = urllib2.urlopen(url).read()
         return ET.fromstring(data)
@@ -167,15 +172,20 @@ class QualtricsExtractor(MySQLDB):
         Pull response data for given surveyID from Qualtrics. Method generates
         JSON objects containing batches of 5000 surveys.
         '''
-        #TODO: Use Q3.0 API, more reliable for large numbers of responses
-        #TODO: Use an ordered dict here instead of the default json.loads behavior
+        lastResponse = self.__getLastResponse(surveyID)
+        lr = ""
+        if lastResponse is not None:
+            lr = "&lastResponseId=" + lastResponse
 
-        urlTemp = Template("https://dc-viawest.qualtrics.com:443/API/v1/surveys/${svid}/responseExports?apiToken=${tk}&fileType=JSON")
-        reqURL = urlTemp.substitute(svid=surveyID, tk=self.apitoken)
+        urlTemp = Template("https://dc-viawest.qualtrics.com:443/API/v1/surveys/${svid}/responseExports?apiToken=${tk}&fileType=JSON${lastr}")
+        reqURL = urlTemp.substitute(svid=surveyID, tk=self.apitoken, lastr=lr)
         req = json.loads(urllib2.urlopen(reqURL).read())
 
         statURL = req['result']['exportStatus'] + "?apiToken=" + self.apitoken
         stat = json.loads(urllib2.urlopen(statURL).read())
+        while stat['result']['percentComplete'] != 100:
+            time.sleep(5) # If it's not done yet, wait a bit and check again
+            stat = json.loads(urllib2.urlopen(statURL).read())
 
         dataURL = stat['result']['fileUrl']
         remote = urllib2.urlopen(dataURL).read()
@@ -184,7 +194,10 @@ class QualtricsExtractor(MySQLDB):
         dataFile = archive.namelist()[0]
         data = json.loads(archive.read(dataFile), object_pairs_hook=OrderedDict)
 
-        return data
+        if not data['responses']:
+            return None
+        else:
+            return data
 
 
 ## Helper method for assigning PodioID from surveys to survey_meta table
@@ -210,24 +223,50 @@ class QualtricsExtractor(MySQLDB):
         self.execute(query.encode('UTF-8', 'ignore'))
 
 
+    def __assignLastResponse(self, svID, rsID):
+        '''
+        Appends the given response ID to the survey_meta row designated by svID
+        as the value in the LastResponse column.
+        '''
+        query = "UPDATE survey_meta SET LastResponse='%s' WHERE SurveyID='%s'" % (rsID, svID)
+        self.execute(query.encode('UTF-8', 'ignore'))
+
+    def __getLastResponse(self, svID):
+        '''
+        For the given surveyID, get the last response.
+        '''
+        q = "SELECT LastResponse FROM survey_meta WHERE SurveyID='%s'" % svID
+        return self.query(q).next()[0]
+
+    def __isLoaded(self, svID):
+        '''
+        Checks survey_meta table for given surveyID. Returns 1 if loaded, 0 otherwise.
+        '''
+        return self.query("SELECT count(*) FROM survey_meta WHERE SurveyID='%s'" % svID).next()[0]
+
+
+
 ## Transform methods
 
     def __parseSurveyMetadata(self, rawMeta):
         '''
         Given survey metadata for active user, returns a dict of dicts mapping
-        column names to values for each survey.
+        column names to values for each survey. Skips over previously loaded surveys.
         '''
-        svMeta = dict()
-        for idx, sv in enumerate(rawMeta):
+        svMeta = []
+        for sv in rawMeta:
             keys = ['SurveyID', 'SurveyName', 'SurveyCreationDate', 'UserFirstName', 'UserLastName', 'responses']
             data = dict()
+            svID = sv['SurveyID']
+            if self.__isLoaded(svID):
+                continue
             for key in keys:
                 try:
                     val = sv[key].replace('"', '')
                     data[key] = val
                 except KeyError as k:
                     data[k[0]] = 'NULL' # Set value to NULL if no data found
-            svMeta[idx] = data # Finally, add row to master dict
+            svMeta.append(data) # Finally, add row to master dict
         return svMeta
 
     def __parseSurvey(self, svID):
@@ -237,8 +276,6 @@ class QualtricsExtractor(MySQLDB):
          2. a dict of dicts mapping db column names to choices for each question
         Method expects an XML ElementTree object corresponding to a single survey.
         '''
-        # TODO: Table describing survey flow
-        # TODO: 3.0 API has exportColumnMap field to get between QIDs and user Q labels
         # Get survey from surveyID
         sv=None
         try:
@@ -296,12 +333,11 @@ class QualtricsExtractor(MySQLDB):
     def __parseResponses(self, svID):
         '''
         Given a survey ID, parses responses from Qualtrics and returns:
-        1. A dict mapping responseIDs to any available metadata
-        2. A dict of dicts containing responses per user per question
-        Method expects a JSON formatted object.
+        1. A list of dicts containing response metadata
+        2. A list of dicts containing question responses
+        Method expects a JSON formatted object with raw survey data.
         '''
         #TODO: In response_metadata, make query to edxprod to get anon_user_id
-        #TODO: In survey_meta, add LastResponse column (for speedier updates)??
         # Get responses from Qualtrics
         rsRaw = None
         try:
@@ -312,7 +348,7 @@ class QualtricsExtractor(MySQLDB):
 
         # Return if API gave us no data
         if rsRaw == None:
-            print "  Survey %s not found; expected %s responses." % (svID, rnum[0])
+            print "  Survey %s gave no new responses." % svID
             return None, None
 
         # Get total expected responses
@@ -321,54 +357,60 @@ class QualtricsExtractor(MySQLDB):
 
         print " Parsing %s responses from survey %s..." % (rnum[0], svID)
 
-        responses = dict()
-        respMeta = dict()
+        responses = []
+        respMeta = []
+        rsID = None
 
-        for rID in rsRaw.keys():
-            response = rsRaw[rID]
-            vals = response.keys()
-
+        for rs in rsRaw['responses']:
+            rsID = rs.pop('ResponseID', 'NULL')
             # Get response metadata for each response
             # Method destructively reads question fields
             rm = dict()
             rm['SurveyID'] = svID
-            rm['ResponseID'] = rID
-            rm['Name'] = response.pop('Name', 'NULL')
-            rm['EmailAddress'] = response.pop('EmailAddress', 'NULL') if 'EmailAddress' in vals else 'NULL'
-            rm['IPAddress'] = response.pop('IPAddress', 'NULL')
-            rm['StartDate'] = response.pop('StartDate', 'NULL')
-            rm['EndDate'] = response.pop('EndDate', 'NULL')
-            rm['ConditionID'] = response.pop('idcond', 'NULL')
-            rm['ConditionDescription'] = response.pop('condition', 'NULL')
-            rm['ResponseSet'] = response.pop('ResponseSet', 'NULL')
-            rm['ExternalDataReference'] = response.pop('ExternalDataReference', 'NULL')
-            rm['Status'] = response.pop('Status', 'NULL')
-            rm['Finished'] = response.pop('Finished', 'NULL')
-            rm['a'] = response.pop('a', 'NULL')
-            rm['UID'] = response.pop('UID', 'NULL')
-            rm['user_id'] = response.pop('user_id', 'NULL')
-            respMeta[rID] = rm
+            rm['ResponseID'] = rsID
+            rm['Name'] = rs.pop('RecipientFirstName', 'NULL') + rs.pop('RecipientLastName', 'NULL')
+            rm['EmailAddress'] = rs.pop('RecipientEmail', 'NULL')
+            rm['IPAddress'] = rs.pop('IPAddress', 'NULL')
+            rm['LocationLatitude'] = rs.pop('LocationLatitude', 'NULL')
+            rm['LocationLongitude'] = rs.pop('LocationLongitude', 'NULL')
+            rm['StartDate'] = rs.pop('StartDate', 'NULL')
+            rm['EndDate'] = rs.pop('EndDate', 'NULL')
+            rm['ResponseSet'] = rs.pop('ResponseSet', 'NULL')
+            rm['ExternalDataReference'] = rs.pop('ExternalDataReference', 'NULL')
+            rm['a'] = rs.pop('a', 'NULL')
+            rm['UID'] = rs.pop('uid', 'NULL')
+            rm['userid'] = rs.pop('user_id', 'NULL')
+            rm['StudentID'] = rs.pop('StudentID', 'NULL')
+            rm['idcond'] = rs.pop('idcond', 'NULL')
+            rm['ConditionText'] = rs.pop('condition', 'NULL')
+            rm['advance'] = rs.pop('advance', 'NULL')
+            rm['Finished'] = rs.pop('Finished', 'NULL')
+            rm['Status'] = rs.pop('Status', 'NULL')
+            unused = rs.pop('c', 'NULL'), rs.pop('LocationAccuracy', 'NULL')
+            respMeta.append(rm)
 
             # Parse remaining fields as question answers
-            for q in response.keys():
-                rs = dict()
-                if q and '_' in q:
+            fields = rs.keys()
+            for q in fields:
+                qs = dict()
+                if 'Q' and '_' in q:
                     qSplit = q.split('_')
                     qNum = qSplit[0]
                     cID = qSplit[1]
                 else:
                     qNum = q
                     cID = 'NULL'
-                rs['SurveyID'] = svID
-                rs['ResponseID'] = rID
-                rs['QuestionNumber'] = qNum
-                rs['AnswerChoiceID'] = cID
-                desc = repr(response[q]).replace('"', '').replace("'", "").replace('\\', '').lstrip('u')
+                qs['SurveyID'] = svID
+                qs['ResponseID'] = rsID
+                qs['QuestionNumber'] = qNum
+                qs['AnswerChoiceID'] = cID
+                desc = rs[q].replace('"', '').replace("'", "").replace('\\', '').lstrip('u')
                 if len(desc) >= 5000:
-                    desc = desc[:5000] #trim past max db varchar length
-                rs['Description'] = desc
-                index = rID + "_" + q
-                responses[index] = rs
+                    desc = desc[:5000] #trim past max field length
+                qs['Description'] = desc
+                responses.append(qs)
+
+        self.__assignLastResponse(svID, rsID)
 
         return responses, respMeta
 
@@ -408,8 +450,8 @@ class QualtricsExtractor(MySQLDB):
                 vals = tuple(row.values())
                 table.append(vals)
             self.bulkInsert(tableName, columns, table)
-        except:
-            print "  Query failed!"
+        except Exception as e:
+            print "  Insert query failed: %s" % e
 
 
 ## Client file IO methods for raw data from Qualtrics API calls.
@@ -460,7 +502,8 @@ class QualtricsExtractor(MySQLDB):
         rawMeta = self.__getSurveyMetadata()
         svMeta = rawMeta['Result']['Surveys']
         parsedSM = self.__parseSurveyMetadata(svMeta)
-        self.__loadDB(parsedSM.values(), 'survey_meta')
+        if len(parsedSM) > 0:
+            self.__loadDB(parsedSM, 'survey_meta')
 
     def loadSurveyData(self):
         '''
@@ -489,19 +532,31 @@ class QualtricsExtractor(MySQLDB):
             responses, respMeta = self.__parseResponses(svID)
             if (responses == None) or (respMeta == None):
                 continue
-            self.__loadDB(responses.values(), 'response')
-            self.__loadDB(respMeta.values(), 'response_metadata')
+            self.__loadDB(responses, 'response')
+            self.__loadDB(respMeta, 'response_metadata')
 
 
 
 if __name__ == '__main__':
+    qe = QualtricsExtractor()
+    opts, args = getopt.getopt(sys.argv[1:], 'dmsr', ['--loadschema', '--loadmeta', '--loadsurvey', '--loadresponses'])
+    for opt, arg in opts:
+        if opt in ('-d', '--loadschema'):
+            qe.setupDB()
+        elif opt in ('-m', '--loadmeta'):
+            qe.loadSurveyMetadata()
+        elif opt in ('-s', '--loadsurvey'):
+            qe.loadSurveyData()
+        elif opt in ('-r', '--loadresponses'):
+            qe.loadResponseData()
+
 
     # Setup MySQL database and extractor class
-    qe = QualtricsExtractor()
-    qe.setupDB()
+    # qe = QualtricsExtractor()
+    # qe.setupDB()
 
     # Load survey data from Qualtrics
     # See profiles/ for timing information
-    qe.loadSurveyMetadata() # takes <1s
+    # qe.loadSurveyMetadata() # takes <1s
     # qe.loadSurveyData() # takes ~3m
-    # qe.loadResponseData(startAfter=50) #TODO: time, profile
+    # qe.loadResponseData() #TODO: time, profile
