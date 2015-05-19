@@ -106,9 +106,8 @@ class QualtricsExtractor(MySQLDB):
                               `a` varchar(200) DEFAULT NULL,
                               `UID` varchar(200) DEFAULT NULL,
                               `userid` varchar(200) DEFAULT NULL,
+                              `anon_uid` varchar(200) DEFAULT NULL,
                               `StudentID` varchar(200) DEFAULT NULL,
-                              `idcond` varchar(200) DEFAULT NULL,
-                              `ConditionText` varchar(200) DEFAULT NULL,
                               `advance` varchar(200) DEFAULT NULL,
                               `Finished` varchar(50) DEFAULT NULL,
                               `Status` varchar (200) DEFAULT NULL
@@ -124,7 +123,7 @@ class QualtricsExtractor(MySQLDB):
                               `UserLastName` varchar(200) DEFAULT NULL,
                               `SurveyName` varchar(2000) DEFAULT NULL,
                               `responses` varchar(50) DEFAULT NULL,
-                              `LastResponse` varchar(50) DEFAULT NULL
+                              `responses_actual` int DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
 
@@ -172,20 +171,30 @@ class QualtricsExtractor(MySQLDB):
         Pull response data for given surveyID from Qualtrics. Method generates
         JSON objects containing batches of 5000 surveys.
         '''
-        lastResponse = self.__getLastResponse(surveyID)
-        lr = ""
-        if lastResponse is not None:
-            lr = "&lastResponseId=" + lastResponse
 
-        urlTemp = Template("https://dc-viawest.qualtrics.com:443/API/v1/surveys/${svid}/responseExports?apiToken=${tk}&fileType=JSON${lastr}")
-        reqURL = urlTemp.substitute(svid=surveyID, tk=self.apitoken, lastr=lr)
+        urlTemp = Template("https://dc-viawest.qualtrics.com:443/API/v1/surveys/${svid}/responseExports?apiToken=${tk}&fileType=JSON")
+        reqURL = urlTemp.substitute(svid=surveyID, tk=self.apitoken)
         req = json.loads(urllib2.urlopen(reqURL).read())
 
         statURL = req['result']['exportStatus'] + "?apiToken=" + self.apitoken
+        time.sleep(10) # Give the request some time to happen
         stat = json.loads(urllib2.urlopen(statURL).read())
-        while stat['result']['percentComplete'] != 100:
+        print stat['result']
+        tries = 0
+        while (stat['result']['percentComplete'] != 100) and tries < 20:
             time.sleep(5) # If it's not done yet, wait a bit and check again
-            stat = json.loads(urllib2.urlopen(statURL).read())
+            try:
+                stat = json.loads(urllib2.urlopen(statURL).read())
+            except:
+                tries += 1
+                print " Recovered from 400 Bad Request error."
+                continue
+            print stat['result']
+            tries += 1
+
+        if tries == 20:
+            print "  Survey %s timed out." % surveyID
+            return None
 
         dataURL = stat['result']['fileUrl']
         remote = urllib2.urlopen(dataURL).read()
@@ -200,7 +209,7 @@ class QualtricsExtractor(MySQLDB):
             return data
 
 
-## Helper method for assigning PodioID from surveys to survey_meta table
+## Helper methods for interfacing with DB
 
     def __assignPodioID(self, survey, surveyID):
         '''
@@ -213,7 +222,7 @@ class QualtricsExtractor(MySQLDB):
             for ef in embeddedFields:
                 if ef.find('Name').text == 'c':
                     podioID = ef.find('Value').text
-        except (urllib2.HTTPError, AttributeError) as e:
+        except AttributeError as e:
             # HTTPError indicates survey not accessible to user
             # AttributeError indicates survey not formatted as expected
             print "%s podioID getter failed with error: %s" % (surveyID, e)
@@ -222,28 +231,11 @@ class QualtricsExtractor(MySQLDB):
         query = "UPDATE survey_meta SET PodioID='%s' WHERE SurveyId='%s'" % (podioID, surveyID)
         self.execute(query.encode('UTF-8', 'ignore'))
 
-
-    def __assignLastResponse(self, svID, rsID):
-        '''
-        Appends the given response ID to the survey_meta row designated by svID
-        as the value in the LastResponse column.
-        '''
-        query = "UPDATE survey_meta SET LastResponse='%s' WHERE SurveyID='%s'" % (rsID, svID)
-        self.execute(query.encode('UTF-8', 'ignore'))
-
-    def __getLastResponse(self, svID):
-        '''
-        For the given surveyID, get the last response.
-        '''
-        q = "SELECT LastResponse FROM survey_meta WHERE SurveyID='%s'" % svID
-        return self.query(q).next()[0]
-
     def __isLoaded(self, svID):
         '''
         Checks survey_meta table for given surveyID. Returns 1 if loaded, 0 otherwise.
         '''
         return self.query("SELECT count(*) FROM survey_meta WHERE SurveyID='%s'" % svID).next()[0]
-
 
 
 ## Transform methods
@@ -338,17 +330,22 @@ class QualtricsExtractor(MySQLDB):
         Method expects a JSON formatted object with raw survey data.
         '''
         #TODO: In response_metadata, make query to edxprod to get anon_user_id
-        # Get responses from Qualtrics
+        # Get responses from Qualtrics-- try multiple times to ensure API request goes through
         rsRaw = None
-        try:
-            rsRaw = self.__getResponses(svID)
-        except urllib2.HTTPError as e:
-            print "  Survey %s gave error '%s'." % (svID, e)
-            return None, None
+        for x in range(0,10):
+            try:
+                rsRaw = self.__getResponses(svID)
+                break
+            except urllib2.HTTPError as e:
+                print "  Survey %s gave error '%s'." % (svID, e)
+                if e.getcode() == '400':
+                    continue
+                else:
+                    return None, None
 
         # Return if API gave us no data
         if rsRaw == None:
-            print "  Survey %s gave no new responses." % svID
+            print "  Survey %s gave no responses." % svID
             return None, None
 
         # Get total expected responses
@@ -381,12 +378,10 @@ class QualtricsExtractor(MySQLDB):
             rm['UID'] = rs.pop('uid', 'NULL')
             rm['userid'] = rs.pop('user_id', 'NULL')
             rm['StudentID'] = rs.pop('StudentID', 'NULL')
-            rm['idcond'] = rs.pop('idcond', 'NULL')
-            rm['ConditionText'] = rs.pop('condition', 'NULL')
             rm['advance'] = rs.pop('advance', 'NULL')
             rm['Finished'] = rs.pop('Finished', 'NULL')
             rm['Status'] = rs.pop('Status', 'NULL')
-            unused = rs.pop('c', 'NULL'), rs.pop('LocationAccuracy', 'NULL')
+            # rm['anon_uid'] = self.__getAnonUserID() # TODO: what goes to this call?
             respMeta.append(rm)
 
             # Parse remaining fields as question answers
@@ -409,8 +404,6 @@ class QualtricsExtractor(MySQLDB):
                     desc = desc[:5000] #trim past max field length
                 qs['Description'] = desc
                 responses.append(qs)
-
-        self.__assignLastResponse(svID, rsID)
 
         return responses, respMeta
 
@@ -534,6 +527,7 @@ class QualtricsExtractor(MySQLDB):
                 continue
             self.__loadDB(responses, 'response')
             self.__loadDB(respMeta, 'response_metadata')
+            self.execute("UPDATE survey_meta SET responses_actual='%d' WHERE SurveyID='%s'" % (len(respMeta), svID))
 
 
 
