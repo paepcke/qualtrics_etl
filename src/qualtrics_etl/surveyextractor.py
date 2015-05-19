@@ -78,7 +78,6 @@ class QualtricsExtractor(MySQLDB):
                               `QuestionNumber` varchar(50) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
-                            # TODO: Page number and order on page
 
         responseTbl = (     """
                             CREATE TABLE `response` (
@@ -143,20 +142,33 @@ class QualtricsExtractor(MySQLDB):
         data = json.loads(urllib2.urlopen(url).read())
         return data
 
-    def __genSurveyIDs(self):
+    def __genSurveyIDs(self, forceLoad=False):
         '''
-        Generator for Qualtrics survey IDs.
+        Generator for Qualtrics survey IDs. Generates only IDs for surveys with
+        new data to pull from Qualtrics unless user specifies that load should be
+        forced.
         '''
         data = self.__getSurveyMetadata()
         surveys = data['Result']['Surveys']
         total = len(surveys)
         print "Extracting %d surveys from Qualtrics..." % total
-        index = 0
-        while index < total:
-            surveyID = surveys[index]['SurveyID']
-            print "Processing survey %d out of %d total: %s" % (index+1, total, surveyID)
-            yield surveyID
-            index += 1
+
+        for idx, sv in enumerate(surveys):
+            svID = sv['SurveyID']
+            print "Processing survey %d out of %d total: %s" % (idx+1, total, svID)
+            if (forceLoad==True):
+                yield svID
+                continue
+
+            payload = int(sv.pop('responses', 0))
+            print " Found %d responses." % payload
+            existing = (self.__numResponses(svID) or 0)
+            print " Have %d responses already." % existing
+            if (existing < payload) or (forceLoad == True):
+                yield svID
+            else:
+                print "  Survey %s yielded no new data." % svID
+                continue
 
     def __getSurvey(self, surveyID):
         '''
@@ -177,22 +189,18 @@ class QualtricsExtractor(MySQLDB):
         req = json.loads(urllib2.urlopen(reqURL).read())
 
         statURL = req['result']['exportStatus'] + "?apiToken=" + self.apitoken
-        time.sleep(10) # Give the request some time to happen
-        stat = json.loads(urllib2.urlopen(statURL).read())
-        print stat['result']
-        tries = 0
-        while (stat['result']['percentComplete'] != 100) and tries < 20:
-            time.sleep(5) # If it's not done yet, wait a bit and check again
+        percent, tries = 0, 0
+        while percent != 100 and tries < 20:
+            time.sleep(5) # Wait 5 seconds between attempts to acquire data
             try:
                 stat = json.loads(urllib2.urlopen(statURL).read())
+                percent = stat['result']['percentComplete']
             except:
-                tries += 1
-                print " Recovered from 400 Bad Request error."
+                print " Recovered from error."
                 continue
-            print stat['result']
-            tries += 1
-
-        if tries == 20:
+            finally:
+                tries += 1
+        if tries >= 20:
             print "  Survey %s timed out." % surveyID
             return None
 
@@ -223,8 +231,6 @@ class QualtricsExtractor(MySQLDB):
                 if ef.find('Name').text == 'c':
                     podioID = ef.find('Value').text
         except AttributeError as e:
-            # HTTPError indicates survey not accessible to user
-            # AttributeError indicates survey not formatted as expected
             print "%s podioID getter failed with error: %s" % (surveyID, e)
 
         # Update DB with retrieved Podio ID
@@ -237,6 +243,11 @@ class QualtricsExtractor(MySQLDB):
         '''
         return self.query("SELECT count(*) FROM survey_meta WHERE SurveyID='%s'" % svID).next()[0]
 
+    def __numResponses(self, svID):
+        '''
+        Given a survey ID, fetches number of responses loaded from survey_meta table.
+        '''
+        return self.query("SELECT responses_actual FROM survey_meta WHERE SurveyID='%s'" % svID).next()[0]
 
 ## Transform methods
 
@@ -352,7 +363,7 @@ class QualtricsExtractor(MySQLDB):
         rq = 'SELECT `responses` FROM survey_meta WHERE SurveyID = "%s"' % svID
         rnum = self.query(rq).next()
 
-        print " Parsing %s responses from survey %s..." % (rnum[0], svID)
+        print " Parsing %s responses from survey %s..." % (len(rsRaw['responses']), svID)
 
         responses = []
         respMeta = []
@@ -461,7 +472,7 @@ class QualtricsExtractor(MySQLDB):
         Client method outputs one survey to XML file.
         '''
         if svID is None:
-            svID = self.__genSurveyIDs().next() # use first survey by default
+            svID = self.__genSurveyIDs(forceLoad=True).next() # use first survey by default
         sv = self.__getSurvey(svID)
         self.__writeXML(sv, svID)
 
@@ -469,7 +480,7 @@ class QualtricsExtractor(MySQLDB):
         '''
         Client method outputs all available surveys to XML files.
         '''
-        svIDs = self.__genSurveyIDs()
+        svIDs = self.__genSurveyIDs(forceLoad=True)
         for svID in svIDs:
             sv = self.__getSurvey(svID)
             self.__writeXML(sv, svID)
@@ -479,7 +490,7 @@ class QualtricsExtractor(MySQLDB):
         Client method outputs responses for one survey to JSON file.
         '''
         if svID is None:
-            svID = self.__genSurveyIDs().next() # use first survey by default
+            svID = self.__genSurveyIDs(forceLoad=True).next() # use first survey by default
         resp = self.__getResponses(svID)
         fn = svID + "_responses"
         self.__writeJSON(resp, fn)
@@ -503,7 +514,7 @@ class QualtricsExtractor(MySQLDB):
         Client method extracts and transforms survey questions and question
         choices and loads to MySQL database using MySQLDB class methods.
         '''
-        sids = self.__genSurveyIDs()
+        sids = self.__genSurveyIDs(forceLoad=True)
         for svID in sids:
             questions, choices = self.__parseSurvey(svID)
             if (questions == None) or (choices == None):
@@ -523,11 +534,13 @@ class QualtricsExtractor(MySQLDB):
                 print "  Skipped surveyID %s" % svID
                 continue # skip first n surveys
             responses, respMeta = self.__parseResponses(svID)
+            retrieved = len(respMeta) if respMeta is not None else 0
+            print " Inserting %d responses on survey %s to database." % (retrieved, svID)
+            self.execute("UPDATE survey_meta SET responses_actual='%d' WHERE SurveyID='%s'" % (retrieved, svID))
             if (responses == None) or (respMeta == None):
                 continue
             self.__loadDB(responses, 'response')
             self.__loadDB(respMeta, 'response_metadata')
-            self.execute("UPDATE survey_meta SET responses_actual='%d' WHERE SurveyID='%s'" % (len(respMeta), svID))
 
 
 
@@ -543,14 +556,3 @@ if __name__ == '__main__':
             qe.loadSurveyData()
         elif opt in ('-r', '--loadresponses'):
             qe.loadResponseData()
-
-
-    # Setup MySQL database and extractor class
-    # qe = QualtricsExtractor()
-    # qe.setupDB()
-
-    # Load survey data from Qualtrics
-    # See profiles/ for timing information
-    # qe.loadSurveyMetadata() # takes <1s
-    # qe.loadSurveyData() # takes ~3m
-    # qe.loadResponseData() #TODO: time, profile
