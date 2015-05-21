@@ -11,12 +11,15 @@ import StringIO as sio
 from collections import OrderedDict
 import getopt
 import time
+import logging
+import datetime as dt
 
 class QualtricsExtractor(MySQLDB):
 
     def __init__(self):
         '''
         Initializes extractor object with credentials from .ssh directory.
+        Set log file directory.
         '''
         home = expanduser("~")
         userFile = home + '/.ssh/qualtrics_user'
@@ -43,6 +46,9 @@ class QualtricsExtractor(MySQLDB):
         with open(dbFile, 'r') as f:
             dbuser = f.readline().rstrip()
             dbpass = f.readline().rstrip()
+
+        logging.basicConfig(filename="EdxQualtricsETL_%d%d%d.log" % (dt.datetime.today().year, dt.datetime.today().month, dt.datetime.today().day),
+                            level=logging.INFO)
 
         MySQLDB.__init__(self, db="EdxQualtrics", user=dbuser, passwd=dbpass)
 
@@ -71,7 +77,6 @@ class QualtricsExtractor(MySQLDB):
                             CREATE TABLE `question` (
                               `SurveyID` varchar(50) DEFAULT NULL,
                               `QuestionID` varchar(5000) DEFAULT NULL,
-                              `QuestionText` varchar(5000) DEFAULT NULL,
                               `QuestionDescription` varchar(5000) DEFAULT NULL,
                               `ForceResponse` varchar(50) DEFAULT NULL,
                               `QuestionType` varchar(50) DEFAULT NULL,
@@ -96,8 +101,6 @@ class QualtricsExtractor(MySQLDB):
                               `Name` varchar(1200) DEFAULT NULL,
                               `EmailAddress` varchar(50) DEFAULT NULL,
                               `IPAddress` varchar(50) DEFAULT NULL,
-                              `LocationLatitude` float DEFAULT NULL,
-                              `LocationLongitude` float DEFAULT NULL,
                               `StartDate` datetime DEFAULT NULL,
                               `EndDate` datetime DEFAULT NULL,
                               `ResponseSet` varchar(50) DEFAULT NULL,
@@ -151,23 +154,23 @@ class QualtricsExtractor(MySQLDB):
         data = self.__getSurveyMetadata()
         surveys = data['Result']['Surveys']
         total = len(surveys)
-        print "Extracting %d surveys from Qualtrics..." % total
+        logging.info("Extracting %d surveys from Qualtrics..." % total)
 
         for idx, sv in enumerate(surveys):
             svID = sv['SurveyID']
-            print "Processing survey %d out of %d total: %s" % (idx+1, total, svID)
+            logging.info("Processing survey %d out of %d total: %s" % (idx+1, total, svID))
             if (forceLoad==True):
                 yield svID
                 continue
 
             payload = int(sv.pop('responses', 0))
-            print " Found %d responses." % payload
+            logging.info(" Found %d responses." % payload)
             existing = (self.__numResponses(svID) or 0)
-            print " Have %d responses already." % existing
+            logging.info(" Have %d responses already." % existing)
             if (existing < payload) or (forceLoad == True):
                 yield svID
             else:
-                print "  Survey %s yielded no new data." % svID
+                logging.info("  Survey %s yielded no new data." % svID)
                 continue
 
     def __getSurvey(self, surveyID):
@@ -196,12 +199,12 @@ class QualtricsExtractor(MySQLDB):
                 stat = json.loads(urllib2.urlopen(statURL).read())
                 percent = stat['result']['percentComplete']
             except:
-                print " Recovered from error."
+                logging.warning(" Recovered from HTTP error.")
                 continue
             finally:
                 tries += 1
         if tries >= 20:
-            print "  Survey %s timed out." % surveyID
+            logging.error("  Survey %s timed out." % surveyID)
             return None
 
         dataURL = stat['result']['fileUrl']
@@ -231,7 +234,7 @@ class QualtricsExtractor(MySQLDB):
                 if ef.find('Name').text == 'c':
                     podioID = ef.find('Value').text
         except AttributeError as e:
-            print "%s podioID getter failed with error: %s" % (surveyID, e)
+            logging.warning("%s podioID getter failed with error: %s" % (surveyID, e))
 
         # Update DB with retrieved Podio ID
         query = "UPDATE survey_meta SET PodioID='%s' WHERE SurveyId='%s'" % (podioID, surveyID)
@@ -284,7 +287,7 @@ class QualtricsExtractor(MySQLDB):
         try:
             sv = self.__getSurvey(svID)
         except urllib2.HTTPError:
-            print "Survey %s not found." % svID
+            logging.warning("Survey %s not found." % svID)
             return None, None
 
         masterQ = dict()
@@ -298,7 +301,6 @@ class QualtricsExtractor(MySQLDB):
         for idx, q in enumerate(questions):
             parsedQ = dict()
             qID = q.attrib['QuestionID']
-            qkeys = ['QuestionText', 'QuestionDescription']
             parsedQ['SurveyID'] = svID
             parsedQ['QuestionID'] = qID
             parsedQ['QuestionNumber'] = q.find('ExportTag').text
@@ -307,15 +309,13 @@ class QualtricsExtractor(MySQLDB):
                 parsedQ['ForceResponse'] = q.find('Validation/ForceResponse').text
             except:
                 parsedQ['ForceResponse'] = 'NULL'
-
-            for key in qkeys:
-                try:
-                    text = q.find(key).text.replace('"', '')
-                    if len(text) > 2000:
-                        text = text[0:2000]
-                    parsedQ[key] = text
-                except:
-                    parsedQ[key] = 'NULL'
+            try:
+                text = q.find('QuestionDescription').text.replace('"', '')
+                if len(text) > 2000:
+                    text = text[0:2000]
+                parsedQ['QuestionDescription'] = text
+            except:
+                parsedQ['QuestionDescription'] = 'NULL'
 
             masterQ[idx] = parsedQ
 
@@ -348,22 +348,22 @@ class QualtricsExtractor(MySQLDB):
                 rsRaw = self.__getResponses(svID)
                 break
             except urllib2.HTTPError as e:
-                print "  Survey %s gave error '%s'." % (svID, e)
+                logging.error("  Survey %s gave error '%s'." % (svID, e))
                 if e.getcode() == '400':
                     continue
                 else:
                     return None, None
 
         # Return if API gave us no data
-        if rsRaw == None:
-            print "  Survey %s gave no responses." % svID
+        if rsRaw['responses'] == None:
+            logging.info("  Survey %s gave no responses." % svID)
             return None, None
 
         # Get total expected responses
         rq = 'SELECT `responses` FROM survey_meta WHERE SurveyID = "%s"' % svID
         rnum = self.query(rq).next()
 
-        print " Parsing %s responses from survey %s..." % (len(rsRaw['responses']), svID)
+        logging.info(" Parsing %s responses from survey %s..." % (len(rsRaw['responses']), svID))
 
         responses = []
         respMeta = []
@@ -379,8 +379,6 @@ class QualtricsExtractor(MySQLDB):
             rm['Name'] = rs.pop('RecipientFirstName', 'NULL') + rs.pop('RecipientLastName', 'NULL')
             rm['EmailAddress'] = rs.pop('RecipientEmail', 'NULL')
             rm['IPAddress'] = rs.pop('IPAddress', 'NULL')
-            rm['LocationLatitude'] = rs.pop('LocationLatitude', 'NULL')
-            rm['LocationLongitude'] = rs.pop('LocationLongitude', 'NULL')
             rm['StartDate'] = rs.pop('StartDate', 'NULL')
             rm['EndDate'] = rs.pop('EndDate', 'NULL')
             rm['ResponseSet'] = rs.pop('ResponseSet', 'NULL')
@@ -392,6 +390,8 @@ class QualtricsExtractor(MySQLDB):
             rm['advance'] = rs.pop('advance', 'NULL')
             rm['Finished'] = rs.pop('Finished', 'NULL')
             rm['Status'] = rs.pop('Status', 'NULL')
+            del rs['LocationLatitude']
+            del rs['LocationLongitude']
             # rm['anon_uid'] = self.__getAnonUserID() # TODO: what goes to this call?
             respMeta.append(rm)
 
@@ -418,27 +418,6 @@ class QualtricsExtractor(MySQLDB):
 
         return responses, respMeta
 
-## Convenience methods to write data to outfile.
-
-    def __writeXML(self, data, filename):
-        '''
-        Convenience function for writing out XML data to file.
-        '''
-        filename = "xml/%s.xml" % filename
-        doc = open(filename, 'w')
-        doc.write(data)
-        doc.close()
-
-    def __writeJSON(self, data, filename):
-        '''
-        Convenience function for writing out JSON data to file.
-        '''
-        jstr = json.dumps(obj=data, indent=4)
-        filename = "xml/%s.json" % filename
-        doc = open(filename, 'w')
-        doc.write(jstr)
-        doc.close()
-
 
 ## Convenience method for handling query calls to MySQL DB.
 
@@ -455,7 +434,7 @@ class QualtricsExtractor(MySQLDB):
                 table.append(vals)
             self.bulkInsert(tableName, columns, table)
         except Exception as e:
-            print "  Insert query failed: %s" % e
+            logging.error("  Insert query failed: %s" % e)
 
 
 ## Client file IO methods for raw data from Qualtrics API calls.
@@ -517,7 +496,7 @@ class QualtricsExtractor(MySQLDB):
         sids = self.__genSurveyIDs(forceLoad=True)
         for svID in sids:
             questions, choices = self.__parseSurvey(svID)
-            if (questions == None) or (choices == None):
+            if (questions == None) and (choices == None):
                 continue
             self.__loadDB(questions.values(), 'question')
             self.__loadDB(choices.values(), 'choice')
@@ -531,11 +510,11 @@ class QualtricsExtractor(MySQLDB):
         sids = self.__genSurveyIDs()
         for idx, svID in enumerate(sids):
             if idx < startAfter:
-                print "  Skipped surveyID %s" % svID
+                logging.info("  Skipped surveyID %s" % svID)
                 continue # skip first n surveys
             responses, respMeta = self.__parseResponses(svID)
             retrieved = len(respMeta) if respMeta is not None else 0
-            print " Inserting %d responses on survey %s to database." % (retrieved, svID)
+            logging.info(" Inserting %d responses on survey %s to database." % (retrieved, svID))
             self.execute("UPDATE survey_meta SET responses_actual='%d' WHERE SurveyID='%s'" % (retrieved, svID))
             if (responses == None) or (respMeta == None):
                 continue
