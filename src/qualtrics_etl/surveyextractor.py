@@ -252,6 +252,14 @@ class QualtricsExtractor(MySQLDB):
         '''
         return self.query("SELECT responses_actual FROM survey_meta WHERE SurveyID='%s'" % svID).next()[0]
 
+    def __getAnonUserID(self, uid):
+        '''
+        Given a userID from Qualtrics, returns translated anon user ID from platform data.
+        '''
+        q = "SELECT edxprod.idExt2Anon('%s')" % uid
+        return self.query(q).next()[0]
+
+
 ## Transform methods
 
     def __parseSurveyMetadata(self, rawMeta):
@@ -387,12 +395,12 @@ class QualtricsExtractor(MySQLDB):
             rm['UID'] = rs.pop('uid', 'NULL')
             rm['userid'] = rs.pop('user_id', 'NULL')
             rm['StudentID'] = rs.pop('StudentID', 'NULL')
+            rm['anon_uid'] = self.__getAnonUserID(rm['a'])
             rm['advance'] = rs.pop('advance', 'NULL')
             rm['Finished'] = rs.pop('Finished', 'NULL')
             rm['Status'] = rs.pop('Status', 'NULL')
             del rs['LocationLatitude']
             del rs['LocationLongitude']
-            # rm['anon_uid'] = self.__getAnonUserID() # TODO: what goes to this call?
             respMeta.append(rm)
 
             # Parse remaining fields as question answers
