@@ -395,7 +395,10 @@ class QualtricsExtractor(MySQLDB):
             rm['UID'] = rs.pop('uid', 'NULL')
             rm['userid'] = rs.pop('user_id', 'NULL')
             rm['StudentID'] = rs.pop('StudentID', 'NULL')
-            rm['anon_uid'] = self.__getAnonUserID(rm['a'])
+            if (rm['a'] == 'NULL'):
+                rm['anon_uid'] = self.__getAnonUserID(rm['user_id'])
+            else:
+                rm['anon_uid'] = self.__getAnonUserID(rm['a'])
             rm['advance'] = rs.pop('advance', 'NULL')
             rm['Finished'] = rs.pop('Finished', 'NULL')
             rm['Status'] = rs.pop('Status', 'NULL')
