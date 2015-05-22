@@ -363,7 +363,7 @@ class QualtricsExtractor(MySQLDB):
                     return None, None
 
         # Return if API gave us no data
-        if rsRaw['responses'] == None:
+        if rsRaw == None:
             logging.info("  Survey %s gave no responses." % svID)
             return None, None
 
