@@ -348,7 +348,6 @@ class QualtricsExtractor(MySQLDB):
         2. A list of dicts containing question responses
         Method expects a JSON formatted object with raw survey data.
         '''
-        #TODO: In response_metadata, make query to edxprod to get anon_user_id
         # Get responses from Qualtrics-- try multiple times to ensure API request goes through
         rsRaw = None
         for x in range(0,10):
@@ -395,10 +394,12 @@ class QualtricsExtractor(MySQLDB):
             rm['UID'] = rs.pop('uid', 'NULL')
             rm['userid'] = rs.pop('user_id', 'NULL')
             rm['StudentID'] = rs.pop('StudentID', 'NULL')
-            if (rm['a'] == 'NULL'):
-                rm['anon_uid'] = self.__getAnonUserID(rm['user_id'])
-            else:
+            if (len(rm['a']) == 32):
                 rm['anon_uid'] = self.__getAnonUserID(rm['a'])
+            elif (len(rm['userid']) == 32):
+                rm['anon_uid'] = self.__getAnonUserID(rm['userid'])
+            else:
+                rm['anon_uid'] = 'NULL'
             rm['advance'] = rs.pop('advance', 'NULL')
             rm['Finished'] = rs.pop('Finished', 'NULL')
             rm['Status'] = rs.pop('Status', 'NULL')
