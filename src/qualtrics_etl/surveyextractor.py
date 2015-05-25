@@ -398,6 +398,10 @@ class QualtricsExtractor(MySQLDB):
                 rm['anon_uid'] = self.__getAnonUserID(rm['a'])
             elif (len(rm['userid']) == 32):
                 rm['anon_uid'] = self.__getAnonUserID(rm['userid'])
+            elif (len(rm['a']) == 40):
+                rm['anon_uid'] = rm['a']
+            elif (len(rm['userid']) == 40):
+                rm['anon_uid'] = rm['userid']
             else:
                 rm['anon_uid'] = 'NULL'
             rm['advance'] = rs.pop('advance', 'NULL')

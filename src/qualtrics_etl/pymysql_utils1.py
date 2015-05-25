@@ -54,7 +54,6 @@ class MySQLDB(object):
         try:
             #self.connection = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db)
             #self.connection = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db,charset='utf8')
-            print 'c1onnected boo'
             self.connection = MySQLdb.connect(host=host, port=port, user=user, passwd=passwd, db=db, local_infile=1)
 
         except MySQLdb.OperationalError:
