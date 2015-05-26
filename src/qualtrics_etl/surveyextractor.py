@@ -13,6 +13,7 @@ import getopt
 import time
 import logging
 import datetime as dt
+from ipToCountry import IpCountryDict
 
 class QualtricsExtractor(MySQLDB):
 
@@ -49,6 +50,8 @@ class QualtricsExtractor(MySQLDB):
 
         logging.basicConfig(filename="EdxQualtricsETL_%d%d%d.log" % (dt.datetime.today().year, dt.datetime.today().month, dt.datetime.today().day),
                             level=logging.INFO)
+
+        self.lookup = IpCountryDict()
 
         MySQLDB.__init__(self, db="EdxQualtrics", user=dbuser, passwd=dbpass)
 
@@ -108,9 +111,10 @@ class QualtricsExtractor(MySQLDB):
                               `a` varchar(200) DEFAULT NULL,
                               `UID` varchar(200) DEFAULT NULL,
                               `userid` varchar(200) DEFAULT NULL,
-                              `anon_uid` varchar(200) DEFAULT NULL,
+                              `anon_screen_name` varchar(200) DEFAULT NULL,
                               `StudentID` varchar(200) DEFAULT NULL,
                               `advance` varchar(200) DEFAULT NULL,
+                              `Country` varchar(50) DEFAULT NULL,
                               `Finished` varchar(50) DEFAULT NULL,
                               `Status` varchar (200) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
@@ -395,15 +399,16 @@ class QualtricsExtractor(MySQLDB):
             rm['userid'] = rs.pop('user_id', 'NULL')
             rm['StudentID'] = rs.pop('StudentID', 'NULL')
             if (len(rm['a']) == 32):
-                rm['anon_uid'] = self.__getAnonUserID(rm['a'])
+                rm['anon_screen_name'] = self.__getAnonUserID(rm['a'])
             elif (len(rm['userid']) == 32):
-                rm['anon_uid'] = self.__getAnonUserID(rm['userid'])
+                rm['anon_screen_name'] = self.__getAnonUserID(rm['userid'])
             elif (len(rm['a']) == 40):
-                rm['anon_uid'] = rm['a']
+                rm['anon_screen_name'] = rm['a']
             elif (len(rm['userid']) == 40):
-                rm['anon_uid'] = rm['userid']
+                rm['anon_screen_name'] = rm['userid']
             else:
-                rm['anon_uid'] = 'NULL'
+                rm['anon_screen_name'] = 'NULL'
+            rm['Country'] = self.lookup.lookupIP(rm['IPAddress'])[1]
             rm['advance'] = rs.pop('advance', 'NULL')
             rm['Finished'] = rs.pop('Finished', 'NULL')
             rm['Status'] = rs.pop('Status', 'NULL')
