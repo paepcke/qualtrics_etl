@@ -2,7 +2,7 @@ from surveyextractor import QualtricsExtractor
 from warnings import filterwarnings
 
 # Script for scheduling regular EdxQualtrics updates
-filterwarnings('ignore')
+filterwarnings(action='ignore', category=Warning)
 qe = QualtricsExtractor()
 qe.setupDB()
 qe.loadSurveyMetadata()
