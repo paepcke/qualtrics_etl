@@ -63,12 +63,12 @@ class QualtricsExtractor(MySQLDB):
         '''
         self.execute("DROP TABLE IF EXISTS `choice`;")
         self.execute("DROP TABLE IF EXISTS `question`;")
-        self.execute("DROP TABLE IF EXISTS `response`;")
-        self.execute("DROP TABLE IF EXISTS `response_metadata`;")
+        # self.execute("DROP TABLE IF EXISTS `response`;")
+        # self.execute("DROP TABLE IF EXISTS `response_metadata`;")
         self.execute("DROP TABLE IF EXISTS `survey_meta`;")
 
         choiceTbl = (       """
-                            CREATE TABLE `choice` (
+                            CREATE TABLE IF NOT EXISTS `choice` (
                               `SurveyId` varchar(50) DEFAULT NULL,
                               `QuestionId` varchar(50) DEFAULT NULL,
                               `ChoiceId` varchar(50) DEFAULT NULL,
@@ -77,7 +77,7 @@ class QualtricsExtractor(MySQLDB):
                             """ )
 
         questionTbl = (     """
-                            CREATE TABLE `question` (
+                            CREATE TABLE IF NOT EXISTS `question` (
                               `SurveyID` varchar(50) DEFAULT NULL,
                               `QuestionID` varchar(5000) DEFAULT NULL,
                               `QuestionDescription` varchar(5000) DEFAULT NULL,
@@ -88,7 +88,7 @@ class QualtricsExtractor(MySQLDB):
                             """ )
 
         responseTbl = (     """
-                            CREATE TABLE `response` (
+                            CREATE TABLE IF NOT EXISTS `response` (
                               `SurveyId` varchar(50) DEFAULT NULL,
                               `ResponseId` varchar(50) DEFAULT NULL,
                               `QuestionNumber` varchar(50) DEFAULT NULL,
@@ -98,7 +98,7 @@ class QualtricsExtractor(MySQLDB):
                             """ )
 
         responseMetaTbl = ( """
-                            CREATE TABLE `response_metadata` (
+                            CREATE TABLE IF NOT EXISTS `response_metadata` (
                               `SurveyID` varchar(50) DEFAULT NULL,
                               `ResponseID` varchar(50) DEFAULT NULL,
                               `Name` varchar(1200) DEFAULT NULL,
@@ -121,7 +121,7 @@ class QualtricsExtractor(MySQLDB):
                             """ )
 
         surveyMeta = (      """
-                            CREATE TABLE `survey_meta` (
+                            CREATE TABLE IF NOT EXISTS `survey_meta` (
                               `SurveyId` varchar(50) DEFAULT NULL,
                               `PodioID` varchar(50) DEFAULT NULL,
                               `SurveyCreationDate` datetime DEFAULT NULL,
