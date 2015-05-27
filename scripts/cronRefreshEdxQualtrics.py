@@ -1,4 +1,4 @@
-from surveyextractor import QualtricsExtractor
+from qualtrics_etl.src.qualtrics_etl.surveyextractor import QualtricsExtractor
 
 # Script for scheduling regular EdxQualtrics updates
 qe = QualtricsExtractor()
