@@ -65,7 +65,7 @@ class QualtricsExtractor(MySQLDB):
         self.execute("DROP TABLE IF EXISTS `question`;")
         # self.execute("DROP TABLE IF EXISTS `response`;")
         # self.execute("DROP TABLE IF EXISTS `response_metadata`;")
-        self.execute("DROP TABLE IF EXISTS `survey_meta`;")
+        # self.execute("DROP TABLE IF EXISTS `survey_meta`;")
 
         choiceTbl = (       """
                             CREATE TABLE IF NOT EXISTS `choice` (
