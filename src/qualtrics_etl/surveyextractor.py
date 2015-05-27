@@ -55,17 +55,11 @@ class QualtricsExtractor(MySQLDB):
 
         MySQLDB.__init__(self, db="EdxQualtrics", user=dbuser, passwd=dbpass)
 
-## Database setup helper method for client
+## Database setup helper methods for client
 
-    def setupDB(self):
-        '''
-        Client method loads schema to local MySQL server instance.
-        '''
+    def resetSurveys(self):
         self.execute("DROP TABLE IF EXISTS `choice`;")
         self.execute("DROP TABLE IF EXISTS `question`;")
-        # self.execute("DROP TABLE IF EXISTS `response`;")
-        # self.execute("DROP TABLE IF EXISTS `response_metadata`;")
-        # self.execute("DROP TABLE IF EXISTS `survey_meta`;")
 
         choiceTbl = (       """
                             CREATE TABLE IF NOT EXISTS `choice` (
@@ -86,6 +80,13 @@ class QualtricsExtractor(MySQLDB):
                               `QuestionNumber` varchar(50) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
+
+        self.execute(choiceTbl)
+        self.execute(questionTbl)
+
+    def resetResponses(self):
+        self.execute("DROP TABLE IF EXISTS `response`;")
+        self.execute("DROP TABLE IF EXISTS `response_metadata`;")
 
         responseTbl = (     """
                             CREATE TABLE IF NOT EXISTS `response` (
@@ -120,6 +121,12 @@ class QualtricsExtractor(MySQLDB):
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
 
+        self.execute(responseTbl)
+        self.execute(responseMetaTbl)
+
+    def resetMetadata(self):
+        self.execute("DROP TABLE IF EXISTS `survey_meta`;")
+
         surveyMeta = (      """
                             CREATE TABLE IF NOT EXISTS `survey_meta` (
                               `SurveyId` varchar(50) DEFAULT NULL,
@@ -133,10 +140,6 @@ class QualtricsExtractor(MySQLDB):
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                             """ )
 
-        self.execute(choiceTbl)
-        self.execute(questionTbl)
-        self.execute(responseTbl)
-        self.execute(responseMetaTbl)
         self.execute(surveyMeta)
 
 ## API extractor methods

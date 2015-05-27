@@ -1,8 +1,18 @@
 from surveyextractor import QualtricsExtractor
 
 # Script for scheduling regular EdxQualtrics updates
-qe = QualtricsExtractor()
-qe.setupDB()
-qe.loadSurveyMetadata()
-qe.loadSurveyData()
-qe.loadResponseData()
+# Usage for cron should be "cronRefreshEdxQualtrics.py -m -s -r"
+
+opts, args = getopt.getopt(sys.argv[1:], 'amsr', ['--reset', '--loadmeta', '--loadsurveys', '--loadresponses'])
+for opt, arg in opts:
+    if opt in ('-a', '--reset'):
+        qe.resetMetadata()
+        qe.resetSurveys()
+        qe.resetResponses()
+    elif opt in ('-m', '--loadmeta'):
+        qe.loadSurveyMetadata()
+    elif opt in ('-s', '--loadsurvey'):
+        qe.resetSurveys()
+        qe.loadSurveyData()
+    elif opt in ('-r', '--loadresponses'):
+        qe.loadResponseData()
