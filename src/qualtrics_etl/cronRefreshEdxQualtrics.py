@@ -1,5 +1,5 @@
 from surveyextractor import QualtricsExtractor
-import getopt
+import getopt, sys
 
 # Script for scheduling regular EdxQualtrics updates
 # Usage for cron should be "cronRefreshEdxQualtrics.py -m -s -r"
