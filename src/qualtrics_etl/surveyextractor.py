@@ -462,44 +462,6 @@ class QualtricsExtractor(MySQLDB):
             logging.error("  Insert query failed: %s" % e)
 
 
-## Client file IO methods for raw data from Qualtrics API calls.
-
-    def writeSurveyMetadata(self):
-        '''
-        Client method outputs survey metadata to JSON file.
-        '''
-        svMeta = self.__getSurveyMetadata()
-        self.__writeJSON(svMeta, "SV_meta")
-
-    def writeSurvey(self, svID=None):
-        '''
-        Client method outputs one survey to XML file.
-        '''
-        if svID is None:
-            svID = self.__genSurveyIDs(forceLoad=True).next() # use first survey by default
-        sv = self.__getSurvey(svID)
-        self.__writeXML(sv, svID)
-
-    def writeAllSurveys(self):
-        '''
-        Client method outputs all available surveys to XML files.
-        '''
-        svIDs = self.__genSurveyIDs(forceLoad=True)
-        for svID in svIDs:
-            sv = self.__getSurvey(svID)
-            self.__writeXML(sv, svID)
-
-    def writeSurveyResponses(self, svID=None):
-        '''
-        Client method outputs responses for one survey to JSON file.
-        '''
-        if svID is None:
-            svID = self.__genSurveyIDs(forceLoad=True).next() # use first survey by default
-        resp = self.__getResponses(svID)
-        fn = svID + "_responses"
-        self.__writeJSON(resp, fn)
-
-
 ## Client data load methods
 
     def loadSurveyMetadata(self):
