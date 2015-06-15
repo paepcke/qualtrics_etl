@@ -401,16 +401,16 @@ class QualtricsExtractor(MySQLDB):
             rm['UID'] = rs.pop('uid', 'NULL')
             rm['userid'] = rs.pop('user_id', 'NULL')
             rm['StudentID'] = rs.pop('StudentID', 'NULL')
-            if (len(rm['a']) == 32):
-                rm['anon_screen_name'] = self.__getAnonUserID(rm['a'])
-            elif (len(rm['userid']) == 32):
-                rm['anon_screen_name'] = self.__getAnonUserID(rm['userid'])
-            elif (len(rm['a']) == 40):
-                rm['anon_screen_name'] = rm['a']
-            elif (len(rm['userid']) == 40):
-                rm['anon_screen_name'] = rm['userid']
-            else:
-                rm['anon_screen_name'] = 'NULL'
+            # if (len(rm['a']) == 32):
+            #     rm['anon_screen_name'] = self.__getAnonUserID(rm['a'])
+            # elif (len(rm['userid']) == 32):
+            #     rm['anon_screen_name'] = self.__getAnonUserID(rm['userid'])
+            # elif (len(rm['a']) == 40):
+            #     rm['anon_screen_name'] = rm['a']
+            # elif (len(rm['userid']) == 40):
+            #     rm['anon_screen_name'] = rm['userid']
+            # else:
+            #     rm['anon_screen_name'] = 'NULL'
             if len(rm['IPAddress']) > 1:
                 rm['Country'] = self.lookup.lookupIP(rm['IPAddress'])[1]
             rm['advance'] = rs.pop('advance', 'NULL')
