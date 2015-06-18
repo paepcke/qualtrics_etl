@@ -408,7 +408,6 @@ class QualtricsExtractor(MySQLDB):
             rm['advance'] = rs.pop('advance', 'NULL')
             rm['Finished'] = rs.pop('Finished', 'NULL')
             rm['Status'] = rs.pop('Status', 'NULL')
-            del rs['StudentID']
             del rs['LocationLatitude']
             del rs['LocationLongitude']
             respMeta.append(rm)
@@ -501,7 +500,7 @@ class QualtricsExtractor(MySQLDB):
             self.__loadDB(responses, 'response')
             self.__loadDB(respMeta, 'response_metadata')
 
-
+#TODO HACK FIXME REVIEW NOTE XXX IDEA CHANGED
 
 if __name__ == '__main__':
     qe = QualtricsExtractor()
