@@ -113,7 +113,6 @@ class QualtricsExtractor(MySQLDB):
                               `UID` varchar(200) DEFAULT NULL,
                               `userid` varchar(200) DEFAULT NULL,
                               `anon_screen_name` varchar(200) DEFAULT NULL,
-                              `StudentID` varchar(200) DEFAULT NULL,
                               `advance` varchar(200) DEFAULT NULL,
                               `Country` varchar(50) DEFAULT NULL,
                               `Finished` varchar(50) DEFAULT NULL,
@@ -399,23 +398,17 @@ class QualtricsExtractor(MySQLDB):
             rm['ExternalDataReference'] = rs.pop('ExternalDataReference', 'NULL')
             rm['a'] = rs.pop('a', 'NULL')
             rm['UID'] = rs.pop('uid', 'NULL')
-            rm['userid'] = rs.pop('user_id', 'NULL')
-            rm['StudentID'] = rs.pop('StudentID', 'NULL')
-            # if (len(rm['a']) == 32):
-            #     rm['anon_screen_name'] = self.__getAnonUserID(rm['a'])
-            # elif (len(rm['userid']) == 32):
-            #     rm['anon_screen_name'] = self.__getAnonUserID(rm['userid'])
-            # elif (len(rm['a']) == 40):
-            #     rm['anon_screen_name'] = rm['a']
-            # elif (len(rm['userid']) == 40):
-            #     rm['anon_screen_name'] = rm['userid']
-            # else:
-            #     rm['anon_screen_name'] = 'NULL'
-            if len(rm['IPAddress']) > 1:
+            rm['userid'] = rs.pop('user_id', 'NULL') #NOTE: Not transformed, use unclear
+            if (len(rm['a']) == 32):
+                rm['anon_screen_name'] = self.__getAnonUserID(rm['a'])
+            if (len(rm['IPAddress']) in range(8,15)):
                 rm['Country'] = self.lookup.lookupIP(rm['IPAddress'])[1]
+            elif (len(rm['UID']) in range(8,15)):
+                rm['Country'] = self.lookup.lookupIP(rm['UID'])[1]
             rm['advance'] = rs.pop('advance', 'NULL')
             rm['Finished'] = rs.pop('Finished', 'NULL')
             rm['Status'] = rs.pop('Status', 'NULL')
+            del rs['StudentID']
             del rs['LocationLatitude']
             del rs['LocationLongitude']
             respMeta.append(rm)
@@ -511,17 +504,22 @@ class QualtricsExtractor(MySQLDB):
 
 
 if __name__ == '__main__':
+    # qe = QualtricsExtractor()
+    # opts, args = getopt.getopt(sys.argv[1:], 'amsr', ['--reset', '--loadmeta', '--loadsurveys', '--loadresponses'])
+    # for opt, arg in opts:
+    #     if opt in ('-a', '--reset'):
+    #         qe.resetMetadata()
+    #         qe.resetSurveys()
+    #         qe.resetResponses()
+    #     elif opt in ('-m', '--loadmeta'):
+    #         qe.loadSurveyMetadata()
+    #     elif opt in ('-s', '--loadsurvey'):
+    #         qe.resetSurveys()
+    #         qe.loadSurveyData()
+    #     elif opt in ('-r', '--loadresponses'):
+    #         qe.loadResponseData()
     qe = QualtricsExtractor()
-    opts, args = getopt.getopt(sys.argv[1:], 'amsr', ['--reset', '--loadmeta', '--loadsurveys', '--loadresponses'])
-    for opt, arg in opts:
-        if opt in ('-a', '--reset'):
-            qe.resetMetadata()
-            qe.resetSurveys()
-            qe.resetResponses()
-        elif opt in ('-m', '--loadmeta'):
-            qe.loadSurveyMetadata()
-        elif opt in ('-s', '--loadsurvey'):
-            qe.resetSurveys()
-            qe.loadSurveyData()
-        elif opt in ('-r', '--loadresponses'):
-            qe.loadResponseData()
+    qe.resetMetadata()
+    qe.resetResponses()
+    qe.loadSurveyMetadata()
+    qe.loadResponseData()
