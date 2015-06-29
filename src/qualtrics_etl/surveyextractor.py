@@ -500,7 +500,7 @@ class QualtricsExtractor(MySQLDB):
             self.__loadDB(responses, 'response')
             self.__loadDB(respMeta, 'response_metadata')
 
-#TODO HACK FIXME REVIEW NOTE XXX IDEA CHANGED
+
 
 if __name__ == '__main__':
     qe = QualtricsExtractor()
