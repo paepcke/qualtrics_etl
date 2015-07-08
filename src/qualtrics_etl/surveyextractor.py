@@ -400,7 +400,7 @@ class QualtricsExtractor(MySQLDB):
             rm['UID'] = rs.pop('uid', 'NULL')
             rm['userid'] = rs.pop('user_id', 'NULL') #NOTE: Not transformed, use unclear
             if rm['SurveyID'] == 'SV_3lSGEka3hgs74fX':
-                print "a: " rm['a']
+                print "a: " + rm['a']
                 print "UID: " + rm['UID']
             if(len(rm['UID']) >= 40):
                 rm['anon_screen_name'] = rm['UID']
