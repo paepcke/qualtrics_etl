@@ -399,9 +399,6 @@ class QualtricsExtractor(MySQLDB):
             rm['a'] = rs.pop('a', 'NULL')
             rm['UID'] = rs.pop('uid', 'NULL')
             rm['userid'] = rs.pop('user_id', 'NULL') #NOTE: Not transformed, use unclear
-            if rm['SurveyID'] == 'SV_3lSGEka3hgs74fX':
-                print "a: " + rm['a']
-                print "UID: " + rm['UID']
             if(len(rm['UID']) >= 40):
                 rm['anon_screen_name'] = rm['UID']
             elif (len(rm['a']) >= 32):
@@ -453,6 +450,9 @@ class QualtricsExtractor(MySQLDB):
             table = []
             for row in data:
                 vals = tuple(row.values())
+                if (tableName == 'response_metadata' and 'SV_3lSGEka3hgs74fX' in row):
+                    print columns
+                    print row
                 table.append(vals)
             self.bulkInsert(tableName, columns, table)
         except Exception as e:
