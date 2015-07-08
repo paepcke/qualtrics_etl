@@ -400,13 +400,11 @@ class QualtricsExtractor(MySQLDB):
             rm['UID'] = rs.pop('uid', 'NULL')
             rm['userid'] = rs.pop('user_id', 'NULL') #NOTE: Not transformed, use unclear
             if rm['SurveyID'] == 'SV_3lSGEka3hgs74fX':
-                print rm['a']
-                print rm['UID']
+                print "a: " rm['a']
+                print "UID: " + rm['UID']
             if(len(rm['UID']) >= 40):
-                print rm['UID']
                 rm['anon_screen_name'] = rm['UID']
             elif (len(rm['a']) >= 32):
-                print rm['a']
                 rm['anon_screen_name'] = self.__getAnonUserID(rm['a'])
             if (len(rm['IPAddress']) in range(8,16)):
                 rm['Country'] = self.lookup.lookupIP(rm['IPAddress'])[1]
