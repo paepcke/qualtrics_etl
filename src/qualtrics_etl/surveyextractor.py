@@ -401,7 +401,7 @@ class QualtricsExtractor(MySQLDB):
             rm['userid'] = rs.pop('user_id', 'NULL') #NOTE: Not transformed, use unclear
             if (len(rm['a'].strip()) >= 32):
                 rm['anon_screen_name'] = self.__getAnonUserID(rm['a'].strip())
-            elif(len(rm['UID'].strip()) == 40):
+            elif(len(rm['UID'].strip()) >= 40):
                 rm['anon_screen_name'] = rm['UID'].strip()
             if (len(rm['IPAddress']) in range(8,16)):
                 rm['Country'] = self.lookup.lookupIP(rm['IPAddress'])[1]
