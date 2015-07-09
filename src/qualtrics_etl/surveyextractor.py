@@ -450,9 +450,8 @@ class QualtricsExtractor(MySQLDB):
             table = []
             for row in data:
                 vals = tuple(row.values())
-                if (tableName == 'response_metadata' and 'SV_3lSGEka3hgs74fX' in row):
-                    print columns
-                    print row
+                print columns
+                print vals
                 table.append(vals)
             self.bulkInsert(tableName, columns, table)
         except Exception as e:
