@@ -448,10 +448,10 @@ class QualtricsExtractor(MySQLDB):
         try:
             columns = tuple(data[200].keys())
             table = []
-            logging.info("     " + ", ".join(columns))
+            # logging.info("     " + ", ".join(columns))
             for row in data:
                 vals = tuple(row.values())
-                logging.info("     " + ", ".join(vals))
+                # logging.info("     " + ", ".join(vals))
                 table.append(vals)
             self.bulkInsert(tableName, columns, table)
         except Exception as e:
