@@ -508,7 +508,7 @@ class QualtricsExtractor(MySQLDB):
 
 if __name__ == '__main__':
     qe = QualtricsExtractor()
-    opts, args = getopt.getopt(sys.argv[1:], 'amsr', ['--reset', '--loadmeta', '--loadsurveys', '--loadresponses'])
+    opts, args = getopt.getopt(sys.argv[1:], 'amsrt', ['--reset', '--loadmeta', '--loadsurveys', '--loadresponses', '--responsetest'])
     for opt, arg in opts:
         if opt in ('-a', '--reset'):
             qe.resetMetadata()
@@ -520,4 +520,9 @@ if __name__ == '__main__':
             qe.resetSurveys()
             qe.loadSurveyData()
         elif opt in ('-r', '--loadresponses'):
+            qe.loadResponseData()
+        elif opt in ('-t', '--responsetest'):
+            qe.resetMetadata()
+            qe.loadSurveyMetadata()
+            qe.resetResponses()
             qe.loadResponseData()
