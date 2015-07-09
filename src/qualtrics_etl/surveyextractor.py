@@ -48,7 +48,7 @@ class QualtricsExtractor(MySQLDB):
             dbuser = f.readline().rstrip()
             dbpass = f.readline().rstrip()
 
-        logging.basicConfig(filename="EdxQualtricsETL_%d%d%d.log" % (dt.datetime.today().year, dt.datetime.today().month, dt.datetime.today().day),
+        logging.basicConfig(filename="EdxQualtricsETL_%d%d%d_%d%d.log" % (dt.datetime.today().year, dt.datetime.today().month, dt.datetime.today().day, dt.datetime.now().hour, dt.datetime.now().minute),
                             level=logging.INFO)
 
         self.lookup = IpCountryDict()
@@ -448,10 +448,10 @@ class QualtricsExtractor(MySQLDB):
         try:
             columns = tuple(data[0].keys())
             table = []
-            logging.info("     " + columns)
+            logging.info("     " + ", ".join(columns))
             for row in data:
                 vals = tuple(row.values())
-                logging.info("     " + vals)
+                logging.info("     " + ", ".join(vals))
                 table.append(vals)
             self.bulkInsert(tableName, columns, table)
         except Exception as e:
