@@ -446,7 +446,7 @@ class QualtricsExtractor(MySQLDB):
         represented as a list of dicts mapping column names to values.
         '''
         try:
-            columns = tuple(data[200].keys())
+            columns = tuple(data[20].keys())
             table = []
             # logging.info("     " + ", ".join(columns))
             for row in data:
