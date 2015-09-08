@@ -263,10 +263,12 @@ class QualtricsExtractor(MySQLDB):
         Given a userID from Qualtrics, returns translated anon user ID from platform data.
         '''
         q = "SELECT edxprod.idExt2Anon('%s')" % uid
-        db = self.query(q)
-        n = db.next()
-        ret = n[0]
-        return ret
+        auid = ''
+        try:
+            auid = self.query(q).next()[0]
+        except:
+            auid = 'ERROR'
+        return auid
 
 
 ## Transform methods
