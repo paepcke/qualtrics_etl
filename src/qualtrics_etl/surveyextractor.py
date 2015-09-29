@@ -108,6 +108,7 @@ class QualtricsExtractor(MySQLDB):
                               `StartDate` datetime DEFAULT NULL,
                               `EndDate` datetime DEFAULT NULL,
                               `ResponseSet` varchar(50) DEFAULT NULL,
+                              `Language` varchar(50) DEFAULT NULL,
                               `ExternalDataReference` varchar(200) DEFAULT NULL,
                               `a` varchar(200) DEFAULT NULL,
                               `UID` varchar(200) DEFAULT NULL,
@@ -400,6 +401,7 @@ class QualtricsExtractor(MySQLDB):
             rm['StartDate'] = rs.pop('StartDate', 'NULL')
             rm['EndDate'] = rs.pop('EndDate', 'NULL')
             rm['ResponseSet'] = rs.pop('ResponseSet', 'NULL')
+            rm['Language'] = rs.pop('Q_Language', 'NULL')
             rm['ExternalDataReference'] = rs.pop('ExternalDataReference', 'NULL')
             rm['a'] = rs.pop('a', 'NULL')
             rm['UID'] = rs.pop('uid', 'NULL')
