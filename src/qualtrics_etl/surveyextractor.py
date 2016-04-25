@@ -485,7 +485,41 @@ class QualtricsExtractor(MySQLDB):
         '''
         Build indexes over survey tables.
         '''
-        indexes = """
+        dropIndexes = """
+                    DROP INDEX idxSurveyMetaSurveyId
+                    ON EdxQualtrics.survey_meta;
+
+                    DROP INDEX idxSurveyMetaSurvNm
+                    ON EdxQualtrics.survey_meta;
+
+                    DROP INDEX idxSurveyMetaCrsName
+                    ON EdxQualtrics.survey_meta;
+
+                    DROP INDEX idxQuestionSurveyId
+                    ON EdxQualtrics.question;
+
+                    DROP FULLTEXT INDEX idxQuestionDescription
+                    ON EdxQualtrics.question;
+
+                    DROP INDEX idxRespMetaSurveyId
+                    ON EdxQualtrics.response_metadata;
+
+                    DROP INDEX idxRespSurveyId
+                    ON EdxQualtrics.response;
+
+                    DROP INDEX idxRespChoiceId
+                    ON EdxQualtrics.response;
+
+                    DROP INDEX idxRespMetaAnonScrnNm
+                    ON EdxQualtrics.response_metadata;
+
+                    DROP FULLTEXT INDEX idResponseDescription
+                    ON response;
+
+                    DROP INDEX idResponseQuestionNum
+                    ON response;"""
+
+        buildIndexes = """
                     CREATE INDEX idxSurveyMetaSurveyId
                     ON EdxQualtrics.survey_meta (SurveyID);
 
@@ -519,7 +553,8 @@ class QualtricsExtractor(MySQLDB):
                     CREATE INDEX idResponseQuestionNum
                     ON response (QuestionNumber);"""
 
-        self.execute(indexes)
+        self.execute(dropIndexes)
+        self.execute(buildIndexes)
 
 ## Client data load methods
 
