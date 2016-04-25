@@ -58,3 +58,9 @@ target/
 # Output tests
 xml/
 profiles/
+
+# IP to country data
+src/qualtrics_etl/data/
+
+# Dev inspection script
+surveycheck.py
