@@ -88,6 +88,7 @@ class QualtricsExtractor(MySQLDB):
     def resetResponses(self):
         self.execute("DROP TABLE IF EXISTS `response`;")
         self.execute("DROP TABLE IF EXISTS `response_metadata`;")
+        self.execute("DROP VIEW IF EXISTS `RespondentMetadata`;")
 
         responseTbl = ("""
                         CREATE TABLE IF NOT EXISTS `response` (
@@ -145,13 +146,13 @@ class QualtricsExtractor(MySQLDB):
         surveyMeta = ("""
                         CREATE TABLE IF NOT EXISTS `survey_meta` (
                           `SurveyId` varchar(50) DEFAULT NULL,
-                          `PodioID` varchar(50) DEFAULT NULL,
                           `SurveyCreationDate` datetime DEFAULT NULL,
                           `UserFirstName` varchar(200) DEFAULT NULL,
                           `UserLastName` varchar(200) DEFAULT NULL,
                           `SurveyName` varchar(2000) DEFAULT NULL,
                           `responses` varchar(50) DEFAULT NULL,
-                          `responses_actual` int DEFAULT NULL
+                          `responses_actual` int DEFAULT NULL,
+                          `course_display_name` varchar(255) DEFAULT NULL
                         ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
                         """)
 
@@ -244,22 +245,20 @@ class QualtricsExtractor(MySQLDB):
 
 ## Helper methods for interfacing with DB
 
-    def __assignPodioID(self, survey, surveyID):
+    def __assignCDN(self, survey, surveyID):
         '''
-        Given a survey from Qualtrics, finds embedded field 'c' and returns
-        field value. For mapping surveys to course names via Podio project IDs.
+        Given a survey from Qualtrics, finds embedded field 'c' and returns field value.
+        Field contains unique course identifier from platform, for mapping to course log data.
         '''
         try:
-            podioID = "NULL"
-            embeddedFields = survey.findall('./EmbeddedData/Field')
-            for ef in embeddedFields:
+            cdn = None
+            embedded = survey.findall('./EmbeddedData/Field')
+            for ef in embedded:
                 if ef.find('Name').text == 'c':
-                    podioID = ef.find('Value').text
+                    cdn = ef.find('Value').text
         except AttributeError as e:
-            logging.warning("%s podioID getter failed with error: %s" % (surveyID, e))
-
-        # Update DB with retrieved Podio ID
-        query = "UPDATE survey_meta SET PodioID='%s' WHERE SurveyId='%s'" % (podioID, surveyID)
+            logging.warning("%s course identifier not resolved: %s" % (surveyID, e))
+        query = "UPDATE survey_meta SET course_display_name='%s' WHERE SurveyId='%s'" % (cdn, surveyID)
         self.execute(query.encode('UTF-8', 'ignore'))
 
     def __isLoaded(self, svID):
@@ -329,7 +328,7 @@ class QualtricsExtractor(MySQLDB):
         masterC = dict()
 
         # Handle PodioID mapping in survey_meta table
-        self.__assignPodioID(sv, svID)
+        self.__assignCDN(sv, svID)
 
         # Parse data for each question
         questions = sv.findall('./Questions/Question')
@@ -533,7 +532,6 @@ if __name__ == '__main__':
     opts, args = getopt.getopt(sys.argv[1:], 'amsrt', ['--reset', '--loadmeta', '--loadsurveys', '--loadresponses', '--responsetest'])
     for opt, arg in opts:
         if opt in ('-a', '--reset'):
-            qe.resetMetadata()
             qe.resetSurveys()
             qe.resetResponses()
         elif opt in ('-m', '--loadmeta'):
