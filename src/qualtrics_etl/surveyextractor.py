@@ -479,6 +479,48 @@ class QualtricsExtractor(MySQLDB):
             logging.error("  Insert query failed: %s" % e)
 
 
+## Build indexes.
+
+    def buildIndexes(self):
+        '''
+        Build indexes over survey tables.
+        '''
+        indexes = """
+                    CREATE INDEX idxSurveyMetaSurveyId
+                    ON EdxQualtrics.survey_meta (SurveyID);
+
+                    CREATE INDEX idxSurveyMetaSurvNm
+                    ON EdxQualtrics.survey_meta (SurveyName(100));
+
+                    CREATE INDEX idxSurveyMetaCrsName
+                    ON EdxQualtrics.survey_meta (course_display_name(255));
+
+                    CREATE INDEX idxQuestionSurveyId
+                    ON EdxQualtrics.question (SurveyID);
+
+                    CREATE FULLTEXT INDEX idxQuestionDescription
+                    ON EdxQualtrics.question (QuestionDescription);
+
+                    CREATE INDEX idxRespMetaSurveyId
+                    ON EdxQualtrics.response_metadata (SurveyID);
+
+                    CREATE INDEX idxRespSurveyId
+                    ON EdxQualtrics.response (SurveyID);
+
+                    CREATE INDEX idxRespChoiceId
+                    ON EdxQualtrics.response (AnswerChoiceId);
+
+                    CREATE INDEX idxRespMetaAnonScrnNm
+                    ON EdxQualtrics.response_metadata (anon_screen_name);
+
+                    CREATE FULLTEXT INDEX idResponseDescription
+                    ON response (Description);
+
+                    CREATE INDEX idResponseQuestionNum
+                    ON response (QuestionNumber);"""
+
+        self.execute(indexes)
+
 ## Client data load methods
 
     def loadSurveyMetadata(self):
@@ -529,7 +571,7 @@ class QualtricsExtractor(MySQLDB):
 
 if __name__ == '__main__':
     qe = QualtricsExtractor()
-    opts, args = getopt.getopt(sys.argv[1:], 'amsrt', ['--reset', '--loadmeta', '--loadsurveys', '--loadresponses', '--responsetest'])
+    opts, args = getopt.getopt(sys.argv[1:], 'amsrti', ['--reset', '--loadmeta', '--loadsurveys', '--loadresponses', '--responsetest', '--buildindexes'])
     for opt, arg in opts:
         if opt in ('-a', '--reset'):
             qe.resetSurveys()
@@ -546,3 +588,5 @@ if __name__ == '__main__':
             qe.loadSurveyMetadata()
             qe.resetResponses()
             qe.loadResponseData()
+        elif opt in ('-i', '--buildindexes'):
+            qe.buildIndexes()
