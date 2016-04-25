@@ -15,6 +15,7 @@ import logging
 import datetime as dt
 from ipToCountry import IpCountryDict
 
+
 class QualtricsExtractor(MySQLDB):
 
     def __init__(self):
@@ -61,25 +62,25 @@ class QualtricsExtractor(MySQLDB):
         self.execute("DROP TABLE IF EXISTS `choice`;")
         self.execute("DROP TABLE IF EXISTS `question`;")
 
-        choiceTbl = (       """
-                            CREATE TABLE IF NOT EXISTS `choice` (
-                              `SurveyId` varchar(50) DEFAULT NULL,
-                              `QuestionId` varchar(50) DEFAULT NULL,
-                              `ChoiceId` varchar(50) DEFAULT NULL,
-                              `description` varchar(3000) DEFAULT NULL
-                            ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
-                            """ )
+        choiceTbl = ("""
+                        CREATE TABLE IF NOT EXISTS `choice` (
+                          `SurveyId` varchar(50) DEFAULT NULL,
+                          `QuestionId` varchar(50) DEFAULT NULL,
+                          `ChoiceId` varchar(50) DEFAULT NULL,
+                          `description` varchar(3000) DEFAULT NULL
+                        ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+                        """)
 
-        questionTbl = (     """
-                            CREATE TABLE IF NOT EXISTS `question` (
-                              `SurveyID` varchar(50) DEFAULT NULL,
-                              `QuestionID` varchar(5000) DEFAULT NULL,
-                              `QuestionDescription` varchar(5000) DEFAULT NULL,
-                              `ForceResponse` varchar(50) DEFAULT NULL,
-                              `QuestionType` varchar(50) DEFAULT NULL,
-                              `QuestionNumber` varchar(50) DEFAULT NULL
-                            ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
-                            """ )
+        questionTbl = ("""
+                        CREATE TABLE IF NOT EXISTS `question` (
+                          `SurveyID` varchar(50) DEFAULT NULL,
+                          `QuestionID` varchar(5000) DEFAULT NULL,
+                          `QuestionDescription` varchar(5000) DEFAULT NULL,
+                          `ForceResponse` varchar(50) DEFAULT NULL,
+                          `QuestionType` varchar(50) DEFAULT NULL,
+                          `QuestionNumber` varchar(50) DEFAULT NULL
+                        ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+                        """)
 
         self.execute(choiceTbl)
         self.execute(questionTbl)
@@ -88,17 +89,17 @@ class QualtricsExtractor(MySQLDB):
         self.execute("DROP TABLE IF EXISTS `response`;")
         self.execute("DROP TABLE IF EXISTS `response_metadata`;")
 
-        responseTbl = (     """
-                            CREATE TABLE IF NOT EXISTS `response` (
-                              `SurveyId` varchar(50) DEFAULT NULL,
-                              `ResponseId` varchar(50) DEFAULT NULL,
-                              `QuestionNumber` varchar(50) DEFAULT NULL,
-                              `AnswerChoiceId` varchar(500) DEFAULT NULL,
-                              `Description` varchar(5000) DEFAULT NULL
-                            ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
-                            """ )
+        responseTbl = ("""
+                        CREATE TABLE IF NOT EXISTS `response` (
+                          `SurveyId` varchar(50) DEFAULT NULL,
+                          `ResponseId` varchar(50) DEFAULT NULL,
+                          `QuestionNumber` varchar(50) DEFAULT NULL,
+                          `AnswerChoiceId` varchar(500) DEFAULT NULL,
+                          `Description` varchar(5000) DEFAULT NULL
+                        ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+                        """)
 
-        responseMetaTbl = ( """
+        responseMetaTbl = ("""
                             CREATE TABLE IF NOT EXISTS `response_metadata` (
                               `SurveyID` varchar(50) DEFAULT NULL,
                               `ResponseID` varchar(50) DEFAULT NULL,
@@ -119,26 +120,40 @@ class QualtricsExtractor(MySQLDB):
                               `Finished` varchar(50) DEFAULT NULL,
                               `Status` varchar (200) DEFAULT NULL
                             ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
-                            """ )
+                            """)
+
+        respondentView = ("""
+                            CREATE VIEW IF NOT EXISTS `RespondentMetadata` (
+                                (SurveyId, ResponseId, anon_screen_name, Country, StartDate, EndDate)
+                            AS SELECT
+                                SurveyID AS SurveyId,
+                                ResponseID AS ResponseId,
+                                anon_screen_name,
+                                Country,
+                                StartDate,
+                                EndDate
+                            FROM response_metadata;
+                           """)
 
         self.execute(responseTbl)
         self.execute(responseMetaTbl)
+        self.execute(respondentView)
 
     def resetMetadata(self):
         self.execute("DROP TABLE IF EXISTS `survey_meta`;")
 
-        surveyMeta = (      """
-                            CREATE TABLE IF NOT EXISTS `survey_meta` (
-                              `SurveyId` varchar(50) DEFAULT NULL,
-                              `PodioID` varchar(50) DEFAULT NULL,
-                              `SurveyCreationDate` datetime DEFAULT NULL,
-                              `UserFirstName` varchar(200) DEFAULT NULL,
-                              `UserLastName` varchar(200) DEFAULT NULL,
-                              `SurveyName` varchar(2000) DEFAULT NULL,
-                              `responses` varchar(50) DEFAULT NULL,
-                              `responses_actual` int DEFAULT NULL
-                            ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
-                            """ )
+        surveyMeta = ("""
+                        CREATE TABLE IF NOT EXISTS `survey_meta` (
+                          `SurveyId` varchar(50) DEFAULT NULL,
+                          `PodioID` varchar(50) DEFAULT NULL,
+                          `SurveyCreationDate` datetime DEFAULT NULL,
+                          `UserFirstName` varchar(200) DEFAULT NULL,
+                          `UserLastName` varchar(200) DEFAULT NULL,
+                          `SurveyName` varchar(2000) DEFAULT NULL,
+                          `responses` varchar(50) DEFAULT NULL,
+                          `responses_actual` int DEFAULT NULL
+                        ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+                        """)
 
         self.execute(surveyMeta)
 
@@ -165,8 +180,8 @@ class QualtricsExtractor(MySQLDB):
 
         for idx, sv in enumerate(surveys):
             svID = sv['SurveyID']
-            logging.info("Processing survey %d out of %d total: %s" % (idx+1, total, svID))
-            if (forceLoad==True):
+            logging.info("Processing survey %d out of %d total: %s" % (idx + 1, total, svID))
+            if forceLoad:
                 yield svID
                 continue
 
@@ -174,7 +189,7 @@ class QualtricsExtractor(MySQLDB):
             logging.info(" Found %d responses." % payload)
             existing = (self.__numResponses(svID) or 0)
             logging.info(" Have %d responses already." % existing)
-            if (existing < payload) or (forceLoad == True):
+            if (existing < payload) or forceLoad:
                 yield svID
             else:
                 logging.info("  Survey %s yielded no new data." % svID)
@@ -184,7 +199,7 @@ class QualtricsExtractor(MySQLDB):
         '''
         Pull survey data for given surveyID from Qualtrics API v2.4. Returns XML string.
         '''
-        url="https://stanforduniversity.qualtrics.com//WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurvey&User=%s&Token=%s&SurveyID=%s" % (self.apiuser, self.apitoken, surveyID)
+        url = "https://stanforduniversity.qualtrics.com//WRAPI/ControlPanel/api.php?API_SELECT=ControlPanel&Version=2.4&Request=getSurvey&User=%s&Token=%s&SurveyID=%s" % (self.apiuser, self.apitoken, surveyID)
         data = urllib2.urlopen(url).read()
         return ET.fromstring(data)
 
@@ -201,7 +216,7 @@ class QualtricsExtractor(MySQLDB):
         statURL = req['result']['exportStatus'] + "?apiToken=" + self.apitoken
         percent, tries = 0, 0
         while percent != 100 and tries < 20:
-            time.sleep(5) # Wait 5 seconds between attempts to acquire data
+            time.sleep(5)  # Wait 5 seconds between attempts to acquire data
             try:
                 stat = json.loads(urllib2.urlopen(statURL).read())
                 percent = stat['result']['percentComplete']
@@ -291,8 +306,8 @@ class QualtricsExtractor(MySQLDB):
                     val = sv[key].replace('"', '')
                     data[key] = val
                 except KeyError as k:
-                    data[k[0]] = 'NULL' # Set value to NULL if no data found
-            svMeta.append(data) # Finally, add row to master dict
+                    data[k[0]] = 'NULL'  # Set value to NULL if no data found
+            svMeta.append(data)  # Finally, add row to master dict
         return svMeta
 
     def __parseSurvey(self, svID):
@@ -303,7 +318,7 @@ class QualtricsExtractor(MySQLDB):
         Method expects an XML ElementTree object corresponding to a single survey.
         '''
         # Get survey from surveyID
-        sv=None
+        sv = None
         try:
             sv = self.__getSurvey(svID)
         except urllib2.HTTPError:
@@ -349,7 +364,7 @@ class QualtricsExtractor(MySQLDB):
                 parsedC['ChoiceID'] = cID
                 cdesc = c.find('Description').text
                 parsedC['Description'] = cdesc.replace("'", "").replace('"', '') if (cdesc is not None) else 'N/A'
-                masterC[qID+cID] = parsedC
+                masterC[qID + cID] = parsedC
 
         return masterQ, masterC
 
@@ -362,7 +377,7 @@ class QualtricsExtractor(MySQLDB):
         '''
         # Get responses from Qualtrics-- try multiple times to ensure API request goes through
         rsRaw = None
-        for x in range(0,10):
+        for x in range(0, 10):
             try:
                 rsRaw = self.__getResponses(svID)
                 break
@@ -374,7 +389,7 @@ class QualtricsExtractor(MySQLDB):
                     return None, None
 
         # Return if API gave us no data
-        if rsRaw == None:
+        if rsRaw is None:
             logging.info("  Survey %s gave no responses." % svID)
             return None, None
 
@@ -405,14 +420,14 @@ class QualtricsExtractor(MySQLDB):
             rm['ExternalDataReference'] = rs.pop('ExternalDataReference', 'NULL')
             rm['a'] = rs.pop('a', 'NULL')
             rm['UID'] = rs.pop('uid', 'NULL')
-            rm['userid'] = rs.pop('user_id', 'NULL') #NOTE: Not transformed, use unclear
+            rm['userid'] = rs.pop('user_id', 'NULL')  # NOTE: Not transformed, use unclear
             if(len(rm['UID']) >= 40):
                 rm['anon_screen_name'] = rm['UID']
             elif (len(rm['a']) >= 32):
                 rm['anon_screen_name'] = self.__getAnonUserID(rm['a'])
-            if (len(rm['IPAddress']) in range(8,16)):
+            if (len(rm['IPAddress']) in range(8, 16)):
                 rm['Country'] = self.lookup.lookupIP(rm['IPAddress'])[1]
-            elif (len(rm['UID']) in range(8,16)):
+            elif (len(rm['UID']) in range(8, 16)):
                 rm['Country'] = self.lookup.lookupIP(rm['UID'])[1]
             rm['advance'] = rs.pop('advance', 'NULL')
             rm['Finished'] = rs.pop('Finished', 'NULL')
@@ -438,7 +453,7 @@ class QualtricsExtractor(MySQLDB):
                 qs['AnswerChoiceID'] = cID
                 desc = rs[q].replace('"', '').replace("'", "").replace('\\', '').lstrip('u')
                 if len(desc) >= 5000:
-                    desc = desc[:5000] #trim past max field length
+                    desc = desc[:5000]  # trim past max field length
                 qs['Description'] = desc
                 responses.append(qs)
 
@@ -486,7 +501,7 @@ class QualtricsExtractor(MySQLDB):
         sids = self.__genSurveyIDs(forceLoad=True)
         for svID in sids:
             questions, choices = self.__parseSurvey(svID)
-            if (questions == None) and (choices == None):
+            if (questions is None) and (choices is None):
                 continue
             self.__loadDB(questions.values(), 'question')
             self.__loadDB(choices.values(), 'choice')
@@ -501,12 +516,12 @@ class QualtricsExtractor(MySQLDB):
         for idx, svID in enumerate(sids):
             if idx < startAfter:
                 logging.info("  Skipped surveyID %s" % svID)
-                continue # skip first n surveys
+                continue  # skip first n surveys
             responses, respMeta = self.__parseResponses(svID)
             retrieved = len(respMeta) if respMeta is not None else 0
             logging.info(" Inserting %d responses on survey %s to database." % (retrieved, svID))
             self.execute("UPDATE survey_meta SET responses_actual='%d' WHERE SurveyID='%s'" % (retrieved, svID))
-            if (responses == None) or (respMeta == None):
+            if (responses is None) or (respMeta is None):
                 continue
             self.__loadDB(responses, 'response')
             self.__loadDB(respMeta, 'response_metadata')
