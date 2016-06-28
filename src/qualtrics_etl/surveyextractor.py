@@ -440,7 +440,7 @@ class QualtricsExtractor(MySQLDB):
             for q in fields:
                 qs = dict()
                 if 'Q' and '_' in q:
-                    qSplit = q.split('_')
+                    qSplit = q.rsplit('_', 1)
                     qNum = qSplit[0]
                     cID = qSplit[1]
                 else:
