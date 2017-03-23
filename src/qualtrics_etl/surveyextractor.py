@@ -15,8 +15,19 @@ import logging
 import datetime as dt
 from ipToCountry import IpCountryDict
 
-
 class QualtricsExtractor(MySQLDB):
+
+    # NOTE: For weekly download of ALL surveys,
+    #       swap the commented statements below.
+     
+    # Database where survey tables are to be
+    # created: 
+    #TARGET_DATABASE = 'DataRequests'
+    TARGET_DATABASE = 'EdxQualtrics'
+    
+    # Particular survey to fetch:
+    #TARGET_SURVEY   = 'SV_ahriYiMPjMnz56l'
+    TARGET_SURVEY   = None
 
     def __init__(self):
         '''
@@ -49,12 +60,17 @@ class QualtricsExtractor(MySQLDB):
             dbuser = f.readline().rstrip()
             dbpass = f.readline().rstrip()
 
-        logging.basicConfig(filename="EdxQualtricsETL_%d%d%d_%d%d.log" % (dt.datetime.today().year, dt.datetime.today().month, dt.datetime.today().day, dt.datetime.now().hour, dt.datetime.now().minute),
+        logging.basicConfig(filename="DataRequestsETL_%d%d%d_%d%d.log" % (dt.datetime.today().year, dt.datetime.today().month, dt.datetime.today().day, dt.datetime.now().hour, dt.datetime.now().minute),
                             level=logging.INFO)
 
         self.lookup = IpCountryDict()
 
-        MySQLDB.__init__(self, db="EdxQualtrics", user=dbuser, passwd=dbpass)
+        #****** Undo
+        #*******MySQLDB.__init__(self, db="EdxQualtrics", user=dbuser, passwd=dbpass)
+        #*******MySQLDB.__init__(self, port=3307, db="DataRequests", user=dbuser, passwd=dbpass)
+        #MySQLDB.__init__(self, port=3307, db="DataRequests", user=dbuser, passwd=dbpass)
+        MySQLDB.__init__(self, db="DataRequests", user=dbuser, passwd=dbpass)
+        #******* End Undo
 
 ## Database setup helper methods for client
 
@@ -124,7 +140,7 @@ class QualtricsExtractor(MySQLDB):
                             """)
 
         respondentView = ("""
-                            CREATE VIEW IF NOT EXISTS `RespondentMetadata` (
+                            CREATE OR REPLACE VIEW `RespondentMetadata` 
                                 (SurveyId, ResponseId, anon_screen_name, Country, StartDate, EndDate)
                             AS SELECT
                                 SurveyID AS SurveyId,
@@ -288,7 +304,7 @@ class QualtricsExtractor(MySQLDB):
 
 ## Transform methods
 
-    def __parseSurveyMetadata(self, rawMeta):
+    def __parseSurveyMetadata(self, rawMeta, the_survey_id=None):
         '''
         Given survey metadata for active user, returns a dict of dicts mapping
         column names to values for each survey. Skips over previously loaded surveys.
@@ -298,6 +314,8 @@ class QualtricsExtractor(MySQLDB):
             keys = ['SurveyID', 'SurveyName', 'SurveyCreationDate', 'UserFirstName', 'UserLastName', 'responses']
             data = dict()
             svID = sv['SurveyID']
+            if the_survey_id is not None and svID != the_survey_id:
+                continue
             if self.__isLoaded(svID):
                 continue
             for key in keys:
@@ -308,7 +326,7 @@ class QualtricsExtractor(MySQLDB):
                     data[k[0]] = 'NULL'  # Set value to NULL if no data found
             svMeta.append(data)  # Finally, add row to master dict
         return svMeta
-
+        
     def __parseSurvey(self, svID):
         '''
         Given surveyID, parses survey from Qualtrics and returns:
@@ -394,7 +412,10 @@ class QualtricsExtractor(MySQLDB):
 
         # Get total expected responses
         rq = 'SELECT `responses` FROM survey_meta WHERE SurveyID = "%s"' % svID
-        rnum = self.query(rq).next()
+        try:
+            rnum = self.query(rq).next()
+        except StopIteration:
+            return ({},{})
 
         logging.info(" Parsing %s responses from survey %s..." % (len(rsRaw['responses']), svID))
 
@@ -485,76 +506,63 @@ class QualtricsExtractor(MySQLDB):
         '''
         Build indexes over survey tables.
         '''
-        dropIndexes = """
-                    DROP INDEX idxSurveyMetaSurveyId
-                    ON EdxQualtrics.survey_meta;
-
-                    DROP INDEX idxSurveyMetaSurvNm
-                    ON EdxQualtrics.survey_meta;
-
-                    DROP INDEX idxSurveyMetaCrsName
-                    ON EdxQualtrics.survey_meta;
-
-                    DROP INDEX idxQuestionSurveyId
-                    ON EdxQualtrics.question;
-
-                    DROP FULLTEXT INDEX idxQuestionDescription
-                    ON EdxQualtrics.question;
-
-                    DROP INDEX idxRespMetaSurveyId
-                    ON EdxQualtrics.response_metadata;
-
-                    DROP INDEX idxRespSurveyId
-                    ON EdxQualtrics.response;
-
-                    DROP INDEX idxRespChoiceId
-                    ON EdxQualtrics.response;
-
-                    DROP INDEX idxRespMetaAnonScrnNm
-                    ON EdxQualtrics.response_metadata;
-
-                    DROP FULLTEXT INDEX idResponseDescription
-                    ON response;
-
-                    DROP INDEX idResponseQuestionNum
-                    ON response;"""
-
+        dropIndexes = "call EdxQualtrics.dropIndexIfExists('%s.survey_meta', 'SurveyID');" % QualtricsExtractor.TARGET_DATABASE +\
+                      "call EdxQualtrics.dropIndexIfExists('%s.survey_meta', 'SurveyID');" % QualtricsExtractor.TARGET_DATABASE +\
+                      "call EdxQualtrics.dropIndexIfExists('%s.survey_meta', 'SurveyName');" % QualtricsExtractor.TARGET_DATABASE +\
+                      "call EdxQualtrics.dropIndexIfExists('%s.survey_meta', 'course_display_name');" % QualtricsExtractor.TARGET_DATABASE +\
+                      "call EdxQualtrics.dropIndexIfExists('%s.question', 'SurveyID');" % QualtricsExtractor.TARGET_DATABASE +\
+                      "call EdxQualtrics.dropIndexIfExists('%s.question', 'QuestionDescription');" % QualtricsExtractor.TARGET_DATABASE +\
+                      "call EdxQualtrics.dropIndexIfExists('%s.response_metadata', 'SurveyID');" % QualtricsExtractor.TARGET_DATABASE +\
+                      "call EdxQualtrics.dropIndexIfExists('%s.response', 'SurveyID');" % QualtricsExtractor.TARGET_DATABASE +\
+                      "call EdxQualtrics.dropIndexIfExists('%s.response', 'AnswerChoiceID');" % QualtricsExtractor.TARGET_DATABASE +\
+                      "call EdxQualtrics.dropIndexIfExists('%s.response_metadata', 'anon_screen_name');" % QualtricsExtractor.TARGET_DATABASE +\
+                      "call EdxQualtrics.dropIndexIfExists('%s.response', 'Description');" % QualtricsExtractor.TARGET_DATABASE +\
+                      "call EdxQualtrics.dropIndexIfExists('%s.response', 'QuestionNumber');" % QualtricsExtractor.TARGET_DATABASE
+                    
+                    
         buildIndexes = """
                     CREATE INDEX idxSurveyMetaSurveyId
-                    ON EdxQualtrics.survey_meta (SurveyID);
-
+                    ON %s.survey_meta (SurveyID);"""  % QualtricsExtractor.TARGET_DATABASE +\
+                    """
                     CREATE INDEX idxSurveyMetaSurvNm
-                    ON EdxQualtrics.survey_meta (SurveyName(100));
-
+                    ON %s.survey_meta (SurveyName(100));"""  % QualtricsExtractor.TARGET_DATABASE +\
+                    """
                     CREATE INDEX idxSurveyMetaCrsName
-                    ON EdxQualtrics.survey_meta (course_display_name(255));
-
+                    ON %s.survey_meta (course_display_name(255));""" % QualtricsExtractor.TARGET_DATABASE +\
+                    """
                     CREATE INDEX idxQuestionSurveyId
-                    ON EdxQualtrics.question (SurveyID);
-
+                    ON %s.question (SurveyID);""" % QualtricsExtractor.TARGET_DATABASE +\
+                    """
                     CREATE FULLTEXT INDEX idxQuestionDescription
-                    ON EdxQualtrics.question (QuestionDescription);
-
+                    ON %s.question (QuestionDescription);""" % QualtricsExtractor.TARGET_DATABASE +\
+                    """
                     CREATE INDEX idxRespMetaSurveyId
-                    ON EdxQualtrics.response_metadata (SurveyID);
-
+                    ON %s.response_metadata (SurveyID);""" % QualtricsExtractor.TARGET_DATABASE +\
+                    """
                     CREATE INDEX idxRespSurveyId
-                    ON EdxQualtrics.response (SurveyID);
-
+                    ON %s.response (SurveyID);""" % QualtricsExtractor.TARGET_DATABASE +\
+                    """
                     CREATE INDEX idxRespChoiceId
-                    ON EdxQualtrics.response (AnswerChoiceId);
-
+                    ON %s.response (AnswerChoiceId(255));""" % QualtricsExtractor.TARGET_DATABASE +\
+                    """
                     CREATE INDEX idxRespMetaAnonScrnNm
-                    ON EdxQualtrics.response_metadata (anon_screen_name);
-
+                    ON %s.response_metadata (anon_screen_name);""" % QualtricsExtractor.TARGET_DATABASE +\
+                    """
                     CREATE FULLTEXT INDEX idResponseDescription
-                    ON response (Description);
-
+                    ON %s.response (Description);""" % QualtricsExtractor.TARGET_DATABASE +\
+                    """
                     CREATE INDEX idResponseQuestionNum
-                    ON response (QuestionNumber);"""
+                    ON %s.response (QuestionNumber);""" % QualtricsExtractor.TARGET_DATABASE
 
-        self.execute(dropIndexes)
-        self.execute(buildIndexes)
+        dropIndexesSeq = dropIndexes.split(';')
+        dropIndexesTruly = dropIndexesSeq[:-1]
+        for instruction in dropIndexesTruly:
+            self.execute(instruction + ';')
+            
+        createIndexesSeq = buildIndexes.split(';')
+        createIndexesTruly = createIndexesSeq[:-1]
+        for instruction in createIndexesTruly:
+            self.execute(instruction + ';')
 
 ## Client data load methods
 
@@ -569,12 +577,17 @@ class QualtricsExtractor(MySQLDB):
         if len(parsedSM) > 0:
             self.__loadDB(parsedSM, 'survey_meta')
 
-    def loadSurveyData(self):
+    def loadSurveyData(self, the_survey_id=None):
         '''
         Client method extracts and transforms survey questions and question
         choices and loads to MySQL database using MySQLDB class methods.
         '''
-        sids = self.__genSurveyIDs(forceLoad=True)
+        
+        if the_survey_id is not None:
+            sids = [the_survey_id]
+        else:
+            sids = self.__genSurveyIDs(forceLoad=True)
+
         for svID in sids:
             questions, choices = self.__parseSurvey(svID)
             if (questions is None) and (choices is None):
@@ -582,13 +595,16 @@ class QualtricsExtractor(MySQLDB):
             self.__loadDB(questions.values(), 'question')
             self.__loadDB(choices.values(), 'choice')
 
-    def loadResponseData(self, startAfter=0):
+    def loadResponseData(self, the_survey_id=None, startAfter=0):
         '''
         Client method extracts and transforms response data and response metadata
         and loads to MySQL database using MySQLDB class methods. User can specify
         where to start in the list of surveyIDs.
         '''
-        sids = self.__genSurveyIDs()
+        if the_survey_id is not None:
+            sids = [the_survey_id]
+        else:
+            sids = self.__genSurveyIDs()
         for idx, svID in enumerate(sids):
             if idx < startAfter:
                 logging.info("  Skipped surveyID %s" % svID)
@@ -602,22 +618,29 @@ class QualtricsExtractor(MySQLDB):
             self.__loadDB(responses, 'response')
             self.__loadDB(respMeta, 'response_metadata')
 
-
-
 if __name__ == '__main__':
     qe = QualtricsExtractor()
+    #************
+    sys.argv.extend(['-a',
+                     '-m', 
+                     '-s', 
+                     '-r', 
+                     '-i'
+                     ])
+    #************
     opts, args = getopt.getopt(sys.argv[1:], 'amsrti', ['--reset', '--loadmeta', '--loadsurveys', '--loadresponses', '--responsetest', '--buildindexes'])
     for opt, arg in opts:
         if opt in ('-a', '--reset'):
             qe.resetSurveys()
             qe.resetResponses()
+            qe.resetMetadata()
         elif opt in ('-m', '--loadmeta'):
             qe.loadSurveyMetadata()
         elif opt in ('-s', '--loadsurvey'):
             qe.resetSurveys()
-            qe.loadSurveyData()
+            qe.loadSurveyData(the_survey_id=QualtricsExtractor.TARGET_SURVEY)
         elif opt in ('-r', '--loadresponses'):
-            qe.loadResponseData()
+            qe.loadResponseData(the_survey_id=QualtricsExtractor.TARGET_SURVEY)
         elif opt in ('-t', '--responsetest'):
             qe.resetMetadata()
             qe.loadSurveyMetadata()
