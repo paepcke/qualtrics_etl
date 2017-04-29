@@ -622,10 +622,10 @@ if __name__ == '__main__':
     qe = QualtricsExtractor()
     #************
     sys.argv.extend(['-a',
-                     '-m', 
-                     '-s', 
+                     #'-m', 
+                     #'-s', 
                      '-r', 
-                     '-i'
+                     #'-i'
                      ])
     #************
     opts, args = getopt.getopt(sys.argv[1:], 'amsrti', ['--reset', '--loadmeta', '--loadsurveys', '--loadresponses', '--responsetest', '--buildindexes'])
