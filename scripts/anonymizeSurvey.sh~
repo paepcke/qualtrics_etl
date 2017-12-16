@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+USAGE="Usage: "`basename $0` surveyId"
+
+if [ $# -lt 2 ]
+then
+    echo $USAGE
+    exit 1
+fi
