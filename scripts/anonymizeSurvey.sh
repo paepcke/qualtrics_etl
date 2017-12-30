@@ -53,8 +53,9 @@ TMPFILE=/tmp/survey_${SURVEY_ID}_scrubbed_$(date +%s).csv
 #exit
 #*********
 
-# Ensure the temp file is deleted on exit:
-trap "echo 'Attempt to remove tempfile; may need to do manually with sudo'; rm -f $TMPFILE" EXIT
+# Ensure the temp file is deleted on exit.
+# Commented out, b/c of MySQL ownership:
+# trap "echo 'Attempt to remove tempfile; may need to do manually with sudo'; rm -f $TMPFILE" EXIT
 
 read -rd '' SELECT_CMD <<EOF
 SELECT 'SurveyId','ResponseId','QuestionNumber','AnswerChoiceId','Description'
