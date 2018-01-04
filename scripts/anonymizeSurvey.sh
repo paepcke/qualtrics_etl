@@ -58,16 +58,14 @@ TMPFILE=/tmp/survey_${SURVEY_ID}_scrubbed_$(date +%s).csv
 # trap "echo 'Attempt to remove tempfile; may need to do manually with sudo'; rm -f $TMPFILE" EXIT
 
 read -rd '' SELECT_CMD <<EOF
+
 SELECT 'SurveyId','ResponseId','QuestionNumber','AnswerChoiceId','Description'
 UNION ALL
 SELECT *
   INTO OUTFILE '${TMPFILE}'
   FIELDS TERMINATED BY "," OPTIONALLY ENCLOSED BY '"' LINES TERMINATED BY '\n'
   FROM ${MYSQL_TBL_NAME}
-  WHERE surveyId = '${SURVEY_ID}'
-    AND QuestionNumber = 'contents'
-     OR QuestionNumber = 'shortplans'
-     OR QuestionNumber = 'longplans';
+  WHERE surveyId = '${SURVEY_ID}';
 EOF
 
 #***********
